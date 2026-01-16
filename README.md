@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="splash.png" alt="elytPOS Logo" width="400">
+</p>
+
 # elytPOS
 
 A modern, efficient Point of Sale (POS) system built with Python and Qt (PySide6).
@@ -41,5 +45,7 @@ python main.py
 *   **Esc:** Close Window / Quit
 
 ## License
+
+This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
 
 © 2026 Mohammed Adnan. All rights reserved.
