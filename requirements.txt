@@ -1,0 +1,3 @@
+PySide6
+psycopg2-binary
+pycups
