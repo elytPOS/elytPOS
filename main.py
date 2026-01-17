@@ -2335,8 +2335,14 @@ class MainWindow(QMainWindow):
                         cust_info = None
                         if self.selected_customer_data:
                             cust_info = {'name': self.selected_customer_data[1], 'mobile': self.selected_customer_data[2], 'address': self.selected_customer_data[3]}
-                            
-                        self.printer.print_receipt(print_items, total, self.current_sale_id or res, customer_info=cust_info)
+                        
+                        should_print = True
+                        if not os.path.exists(self.printer.config_path):
+                            if PrinterConfigDialog(self.printer, self).exec() != QDialog.Accepted:
+                                should_print = False
+                        
+                        if should_print:
+                            self.printer.print_receipt(print_items, total, self.current_sale_id or res, customer_info=cust_info)
                 bill_no = self.current_sale_id or res
                 self.reset_grid()
                 QMessageBox.information(self, "Success", f"Voucher #{bill_no} Saved Successfully.")

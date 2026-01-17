@@ -161,3 +161,4 @@ backups/
 screenshot_*.png
 *.png
 !splash.png
+*.config
