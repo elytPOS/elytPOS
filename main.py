@@ -1231,14 +1231,27 @@ class ConfigDialog(QDialog):
 
     def save_config(self):
         import configparser
-        config = configparser.ConfigParser()
-        config['postgresql'] = {
+        import psycopg2
+        
+        params = {
             'dbname': self.dbname.text(),
             'user': self.user.text(),
             'password': self.password.text(),
             'host': self.host.text(),
             'port': self.port.text()
         }
+
+        # Check connection before saving
+        try:
+            conn = psycopg2.connect(**params)
+            conn.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Connection Error", 
+                                 f"Failed to connect to the database with these settings.\n\nError: {e}")
+            return
+
+        config = configparser.ConfigParser()
+        config['postgresql'] = params
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
         self.accept()
@@ -2342,16 +2355,33 @@ def main():
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             sys.exit(0)
 
-    db_manager = DatabaseManager()
-    db_manager.purge_old_deleted_products()
-    
-    try:
-        conn = db_manager.get_connection()
-        conn.close()
-    except Exception as e:
-        QMessageBox.critical(None, "Database Error", 
-                             f"Could not connect to database.\n\nPlease check db.config and ensure PostgreSQL is running.\n\nError: {e}")
-        sys.exit(1)
+    while True:
+        try:
+            db_manager = DatabaseManager()
+            conn = db_manager.get_connection()
+            conn.close()
+            db_manager.purge_old_deleted_products()
+            break
+        except Exception as e:
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Critical)
+            box.setWindowTitle("Database Error")
+            box.setText("Could not connect to database.")
+            box.setInformativeText(f"Please check db.config and ensure PostgreSQL is running.\n\nError: {e}")
+            
+            btn_retry = box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+            btn_config = box.addButton("Configure DB", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+            
+            box.exec()
+            
+            if box.clickedButton() == btn_config:
+                if ConfigDialog(config_path).exec() != QDialog.Accepted:
+                    sys.exit(0)
+            elif box.clickedButton() == btn_retry:
+                continue
+            else:
+                sys.exit(1)
 
     if not db_manager.get_users():
         if SuperUserCreationDialog(db_manager).exec() != QDialog.Accepted:
