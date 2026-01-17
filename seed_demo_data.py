@@ -1,10 +1,48 @@
 import sys
 import os
 import random
+import configparser
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from datetime import datetime, timedelta
 from database import DatabaseManager
 from PySide6.QtWidgets import QApplication, QDialog
 from main import ConfigDialog
+
+def create_db_if_missing(config_path):
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    
+    if 'postgresql' not in config:
+        return
+
+    db_params = config['postgresql']
+    dbname = db_params.get('dbname', 'elytpos_db')
+    user = db_params.get('user', 'elytpos_user')
+    password = db_params.get('password', 'elytpos_password')
+    host = db_params.get('host', 'localhost')
+    port = db_params.get('port', '5432')
+
+    # Connect to default 'postgres' database to check/create target db
+    try:
+        con = psycopg2.connect(dbname='postgres', user=user, password=password, host=host, port=port)
+        con.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cur = con.cursor()
+        
+        cur.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s", (dbname,))
+        exists = cur.fetchone()
+        
+        if not exists:
+            print(f"Database '{dbname}' not found. Creating...")
+            cur.execute(f"CREATE DATABASE {dbname} OWNER {user}")
+            print(f"Database '{dbname}' created successfully.")
+        else:
+            print(f"Database '{dbname}' already exists.")
+            
+        cur.close()
+        con.close()
+    except Exception as e:
+        print(f"Warning: Could not check/create database: {e}")
 
 def main():
     app = QApplication(sys.argv)
@@ -19,6 +57,8 @@ def main():
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             print("Setup cancelled.")
             sys.exit(0)
+
+    create_db_if_missing(config_path)
 
     db = DatabaseManager()
     print("Seeding demo data...")
