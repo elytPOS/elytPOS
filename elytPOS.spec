@@ -7,7 +7,7 @@ base_path = os.getcwd()
 
 # Define datas list
 added_datas = [
-    (os.path.join(base_path, 'splash.png'), '.')
+    (os.path.join(base_path, 'splash.png'), '.'), (os.path.join(base_path, 'logo.svg'), '.')
 ]
 
 # Only bundle XKB data on Linux
