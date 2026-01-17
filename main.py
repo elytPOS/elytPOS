@@ -14,7 +14,7 @@ import datetime
 
 
 from PySide6.QtCore import Qt, QDate, Signal, QEvent, QTimer
-from PySide6.QtGui import QFont, QAction, QPalette, QColor, QKeyEvent, QPixmap
+from PySide6.QtGui import QFont, QAction, QPalette, QColor, QKeyEvent, QPixmap, QIcon
 from database import DatabaseManager
 from printer import ReceiptPrinter
 
@@ -2330,7 +2330,7 @@ class MainWindow(QMainWindow):
         self.showFullScreen(); self.grid.setFocus()
 
 def main():
-    app = QApplication(sys.argv); app.setFont(QFont("FiraCode Nerd Font", 10))
+    app = QApplication(sys.argv); app.setFont(QFont("FiraCode Nerd Font", 10)); app.setWindowIcon(QIcon(resource_path("logo.svg")))
     
     if getattr(sys, 'frozen', False):
         application_path = os.path.dirname(sys.executable)
