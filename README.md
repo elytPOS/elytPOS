@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="splash.png" alt="elytPOS Logo" width="400">
+  <img src="logo.svg" alt="elytPOS Logo" width="400">
 </p>
 
 # elytPOS
