@@ -76,10 +76,8 @@ class ReceiptPrinter:
             print(f"Printer {target_printer} not found!")
             return False
 
-        # 1. Generate HTML
         html_content = self.generate_receipt_html(items, total, sale_id, customer_info)
         
-        # 2. Render to PDF using Qt
         temp_pdf = f"/tmp/receipt_{sale_id}.pdf"
         
         doc = QTextDocument()
@@ -91,21 +89,16 @@ class ReceiptPrinter:
         printer.setOutputFormat(QPrinter.PdfFormat)
         printer.setOutputFileName(temp_pdf)
         
-        # Adjust to strictly 3 inches (76.2mm)
         page_width_mm = 76.2
         page_size = QPageSize(QSizeF(page_width_mm, 300), QPageSize.Millimeter)
-        # Use small margins to avoid hardware clipping
         layout = QPageLayout(page_size, QPageLayout.Portrait, QMarginsF(1, 1, 1, 1), QPageLayout.Millimeter)
         printer.setPageLayout(layout)
         
-        # Set text width to match the printable area (approx 74mm)
-        # 74mm * 72 / 25.4 = 209.7 points
         doc.setTextWidth(210) 
         doc.setHtml(html_content)
         
         doc.print_(printer)
 
-        # 3. Print PDF via CUPS
         try:
             self.conn.printFile(target_printer, temp_pdf, f"POS Receipt {sale_id}", {"page-left": "0", "page-right": "0", "page-top": "0", "page-bottom": "0"})
             return True
@@ -138,7 +131,6 @@ class ReceiptPrinter:
                 
             subtotal = item['quantity'] * calc_rate
             
-            # Calculate savings if MRP is available
             total_mrp += calc_mrp * item['quantity'] if calc_mrp else subtotal
             
             mrp_display = ""

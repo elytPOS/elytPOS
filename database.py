@@ -327,6 +327,11 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         try:
+            # Check if used by products
+            cur.execute("SELECT COUNT(*) FROM products WHERE base_uom = %s", (name,))
+            if cur.fetchone()[0] > 0:
+                return False
+            
             cur.execute("DELETE FROM uoms WHERE name = %s", (name,))
             conn.commit()
             return True
@@ -794,7 +799,15 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("DELETE FROM products WHERE is_deleted = TRUE AND deleted_at < CURRENT_TIMESTAMP - INTERVAL '30 days'")
+            # Only delete products that have no transaction history
+            cur.execute("""
+                DELETE FROM products 
+                WHERE is_deleted = TRUE 
+                AND deleted_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
+                AND id NOT IN (SELECT DISTINCT product_id FROM sale_items WHERE product_id IS NOT NULL)
+                AND id NOT IN (SELECT DISTINCT product_id FROM purchase_items WHERE product_id IS NOT NULL)
+                AND id NOT IN (SELECT DISTINCT product_id FROM held_sale_items WHERE product_id IS NOT NULL)
+            """)
             conn.commit()
         except Exception as e:
             print(f"Error purging products: {e}")
