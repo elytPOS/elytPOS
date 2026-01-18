@@ -24,6 +24,7 @@ if not os.path.exists(config_path):
 
 db_manager = DatabaseManager()
 conn_params = db_manager.conn_params
+db_manager.close() # Release pool connections
 
 print("Clearing database...")
 
