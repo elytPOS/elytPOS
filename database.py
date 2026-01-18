@@ -1,13 +1,36 @@
 import psycopg2
 from psycopg2 import sql
+import psycopg2.pool
 import configparser
 import os
 import sys
 
+class PooledConnection:
+    def __init__(self, pool, conn):
+        self.pool = pool
+        self.conn = conn
+    
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+    def close(self):
+        if self.conn:
+            self.pool.putconn(self.conn)
+            self.conn = None
+
 class DatabaseManager:
     def __init__(self):
         self.conn_params = self.load_config()
+        self.pool = None
+        self.init_pool()
         self.init_db()
+
+    def init_pool(self):
+        try:
+            self.pool = psycopg2.pool.ThreadedConnectionPool(1, 20, **self.conn_params)
+        except Exception as e:
+            print(f"Error creating connection pool: {e}")
+            raise e
 
     def load_config(self):
         config = configparser.ConfigParser()
@@ -35,7 +58,11 @@ class DatabaseManager:
         return defaults
 
     def get_connection(self):
-        return psycopg2.connect(**self.conn_params)
+        return PooledConnection(self.pool, self.pool.getconn())
+
+    def close(self):
+        if self.pool:
+            self.pool.closeall()
 
     def init_db(self):
         commands = [

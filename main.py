@@ -2391,12 +2391,15 @@ def main():
 
     if not db_manager.get_users():
         if SuperUserCreationDialog(db_manager).exec() != QDialog.Accepted:
+            db_manager.close()
             sys.exit(0)
 
+    app.aboutToQuit.connect(db_manager.close)
     login_dlg = LoginDialog(db_manager)
     if login_dlg.exec() == QDialog.Accepted:
         window = MainWindow(db_manager, login_dlg.user); window.show(); sys.exit(app.exec())
     else:
+        db_manager.close()
         sys.exit(0)
 
 if __name__ == "__main__":
