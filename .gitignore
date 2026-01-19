@@ -162,3 +162,4 @@ screenshot_*.png
 *.png
 !splash.png
 *.config
+printer_config.json
