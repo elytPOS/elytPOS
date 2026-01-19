@@ -1710,6 +1710,10 @@ class ExcelTable(QTableWidget):
             
             QTimer.singleShot(0, lambda: self.scrollTo(self.model().index(row, 0), QAbstractItemView.ScrollHint.PositionAtCenter))
 
+    def is_row_valid(self, row):
+        name_item = self.item(row, 1)
+        return name_item is not None and name_item.data(Qt.UserRole) is not None
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_F2:
             event.ignore()
@@ -1717,6 +1721,11 @@ class ExcelTable(QTableWidget):
         
         row, col = self.currentRow(), self.currentColumn()
         
+        if event.key() == Qt.Key_Insert:
+            self.insertRow(row)
+            self.setCurrentCell(row, 0)
+            return
+
         if event.key() == Qt.Key_Left:
             if col == 0:
                 if row > 0:
@@ -1727,6 +1736,7 @@ class ExcelTable(QTableWidget):
 
         if event.key() == Qt.Key_Right:
             if col == self.columnCount() - 1:
+                if not self.is_row_valid(row): return
                 if row == self.rowCount() - 1:
                     self.setRowCount(row + 2)
                 self.setCurrentCell(row + 1, 0)
@@ -1734,22 +1744,37 @@ class ExcelTable(QTableWidget):
                 super().keyPressEvent(event)
             return
 
-        if event.key() == Qt.Key_Up or event.key() == Qt.Key_Down:
+        if event.key() == Qt.Key_Up:
+            super().keyPressEvent(event)
+            return
+            
+        if event.key() == Qt.Key_Down:
+            if row == self.rowCount() - 1 or not self.is_row_valid(row):
+                return
             super().keyPressEvent(event)
             return
 
         if event.key() == Qt.Key_Delete:
-            for item in self.selectedItems(): self.removeRow(item.row())
-            if self.rowCount() < 20: self.setRowCount(20)
+            rows = sorted(list(set(i.row() for i in self.selectedItems())), reverse=True)
+            if rows:
+                target_row = min(rows)
+                for r in rows:
+                    self.removeRow(r)
+                if self.rowCount() < 20: self.setRowCount(20)
+                target_row = min(target_row, self.rowCount() - 1)
+                self.setCurrentCell(target_row, col)
+            return
         elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
             if col in self.nav_order:
                 idx = self.nav_order.index(col)
                 if idx < len(self.nav_order) - 1: 
                     self.setCurrentCell(row, self.nav_order[idx + 1])
                 else:
+                    if not self.is_row_valid(row): return
                     if row == self.rowCount() - 1: self.setRowCount(row + 2)
                     self.setCurrentCell(row + 1, 0)
             elif col in (6, 7): 
+                if not self.is_row_valid(row): return
                 if row == self.rowCount() - 1: self.setRowCount(row + 2)
                 self.setCurrentCell(row + 1, 0)
             elif col == 1: 
