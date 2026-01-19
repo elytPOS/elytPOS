@@ -469,7 +469,7 @@ class SuperUserCreationDialog(QDialog):
         if not self.username.text() or not self.password.text():
             QMessageBox.warning(self, "Error", "Username and Password are required.")
             return
-        if self.db.add_user(self.username.text(), self.password.text(), self.full_name.text(), True):
+        if self.db.add_user(self.username.text(), self.password.text(), self.full_name.text(), "admin"):
             QMessageBox.information(self, "Success", "Super Administrator created successfully!")
             self.accept()
         else:
@@ -492,17 +492,17 @@ class UserMasterDialog(QDialog):
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
         self.full_name = QLineEdit()
-        self.is_superuser = QComboBox()
-        self.is_superuser.addItems(["No", "Yes"])
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(["staff", "admin", "manager"])
         form.addRow("Username:", self.username)
         form.addRow("Password:", self.password)
         form.addRow("Full Name:", self.full_name)
-        form.addRow("Super Admin:", self.is_superuser)
+        form.addRow("Role:", self.role_combo)
         add_btn = QPushButton("Add &User")
         add_btn.clicked.connect(self.add_user)
         form.addRow(add_btn)
         layout.addLayout(form)
-        self.table = QTableWidget(); self.table.setColumnCount(4); self.table.setHorizontalHeaderLabels(["Username", "Full Name", "Superadmin", "Action"])
+        self.table = QTableWidget(); self.table.setColumnCount(4); self.table.setHorizontalHeaderLabels(["Username", "Full Name", "Role", "Action"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.table)
         self.load_users()
@@ -510,8 +510,8 @@ class UserMasterDialog(QDialog):
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
     def add_user(self):
-        is_super = self.is_superuser.currentIndex() == 1
-        if self.db.add_user(self.username.text(), self.password.text(), self.full_name.text(), is_super):
+        role = self.role_combo.currentText()
+        if self.db.add_user(self.username.text(), self.password.text(), self.full_name.text(), role):
             self.username.clear(); self.password.clear(); self.full_name.clear()
             self.load_users()
     def load_users(self):
@@ -520,7 +520,7 @@ class UserMasterDialog(QDialog):
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(u[1]))
             self.table.setItem(row, 1, QTableWidgetItem(u[2] or ""))
-            self.table.setItem(row, 2, QTableWidgetItem("Yes" if u[3] else "No"))
+            self.table.setItem(row, 2, QTableWidgetItem(u[3].capitalize()))
             del_btn = QPushButton("Del")
             del_btn.clicked.connect(lambda _, uid=u[0]: self.delete_user(uid))
             self.table.setCellWidget(row, 3, del_btn)
@@ -1472,20 +1472,30 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&Administration")
-        if self.current_user[3]: 
-            user_action = QAction("&User Master", self); user_action.triggered.connect(self.open_user_master); file_menu.addAction(user_action)
-        inv_action = QAction("&Item Master (Ctrl+I)", self); inv_action.setShortcut("Ctrl+I"); inv_action.triggered.connect(self.open_inventory); file_menu.addAction(inv_action)
-        pur_action = QAction("&Purchase Master", self); pur_action.triggered.connect(self.open_purchase_master); file_menu.addAction(pur_action)
-        schemes_menu = file_menu.addMenu("&Schemes")
-        schemes_menu.addAction("&Add New Scheme", lambda: self.open_scheme_entry(None))
-        schemes_menu.addAction("&Modify Scheme", lambda: self.open_scheme_list("modify"))
-        schemes_menu.addAction("&List Schemes", lambda: self.open_scheme_list("list"))
-        file_menu.addAction("&Customer Master", self.open_customer_master)
-        file_menu.addAction("&UOM Master", self.open_uom_master)
-        file_menu.addAction("&Language Master", self.open_language_master)
-        file_menu.addAction("&Maintenance", self.open_maintenance)
-        file_menu.addAction("&Recycle Bin", self.open_recycle_bin)
-        file_menu.addAction("Printer &Settings", self.open_printer_config)
+        role = self.current_user[3] 
+        if role == 'admin':
+            user_action = QAction("&User Master", self)
+            user_action.triggered.connect(self.open_user_master)
+            file_menu.addAction(user_action)
+        if role in ('admin', 'manager'):
+            inv_action = QAction("&Item Master (Ctrl+I)", self)
+            inv_action.setShortcut("Ctrl+I")
+            inv_action.triggered.connect(self.open_inventory)
+            file_menu.addAction(inv_action)
+            pur_action = QAction("&Purchase Master", self)
+            pur_action.triggered.connect(self.open_purchase_master)
+            file_menu.addAction(pur_action)
+            schemes_menu = file_menu.addMenu("&Schemes")
+            schemes_menu.addAction("&Add New Scheme", lambda: self.open_scheme_entry(None))
+            schemes_menu.addAction("&Modify Scheme", lambda: self.open_scheme_list("modify"))
+            schemes_menu.addAction("&List Schemes", lambda: self.open_scheme_list("list"))
+            file_menu.addAction("&Customer Master", self.open_customer_master)
+            file_menu.addAction("&UOM Master", self.open_uom_master)
+            file_menu.addAction("&Language Master", self.open_language_master)
+        if role == 'admin':
+            file_menu.addAction("&Maintenance", self.open_maintenance)
+            file_menu.addAction("&Recycle Bin", self.open_recycle_bin)
+            file_menu.addAction("Printer &Settings", self.open_printer_config)
         calc_action = QAction("&Calculator (F8)", self)
         calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
         calc_action.triggered.connect(self.open_calculator)

@@ -15,10 +15,11 @@ DEFAULT_CONFIG = {
     "paper_width": "76mm",
     "header_text": "ELYT POS",
     "shop_name": "KIRANA STORE",
+    "tax_id": "",
     "footer_text": "Thank you for your visit!<br/>Items once sold cannot be returned.",
     "show_savings": True,
     "show_mrp": True,
-    "font_size": "Medium" 
+    "font_size": "Medium"
 }
 class ReceiptPrinter:
     def __init__(self):
@@ -146,6 +147,7 @@ class ReceiptPrinter:
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
         header_text = self.config.get("header_text", "ELYT POS")
         shop_name = self.config.get("shop_name", "KIRANA STORE")
+        tax_id = self.config.get("tax_id", "")
         footer_text = self.config.get("footer_text", "Thank you!").replace("\n", "<br/>")
         show_mrp = self.config.get("show_mrp", True)
         show_savings = self.config.get("show_savings", True)
@@ -194,6 +196,7 @@ class ReceiptPrinter:
         savings_html = ""
         if show_savings and savings > 0:
             savings_html = f"<div class='savings'>Total Savings: ₹ {self._fmt(savings)}</div>"
+        tax_html = f'<div class="tax-id">GST: {tax_id}</div>' if tax_id else ""
         html = f"""
         <html>
         <style>
@@ -207,7 +210,8 @@ class ReceiptPrinter:
                 color: black;
             }}
             .header {{ text-align: center; font-weight: 900; font-size: 1.5em; margin-bottom: 1mm; }}
-            .shop-name {{ text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 2mm; }}
+            .shop-name {{ text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 1mm; }}
+            .tax-id {{ text-align: center; font-size: 1em; font-weight: bold; margin-bottom: 2mm; }}
             .info-line {{ font-size: 0.9em; margin-bottom: 1mm; border-bottom: 0.1mm solid #ccc; padding-bottom: 1mm; }}
             .cust-section {{ margin: 2mm 0; border-bottom: 0.1mm solid #ccc; padding-bottom: 2mm; font-size: 1em; }}
             table {{ width: 100%; border-collapse: collapse; }}
@@ -226,6 +230,7 @@ class ReceiptPrinter:
         <body>
             <div class="header">{header_text}</div>
             <div class="shop-name">{shop_name}</div>
+            {tax_html}
             <div class="info-line">
                 Date: {now} | Bill: #{sale_id}
             </div>

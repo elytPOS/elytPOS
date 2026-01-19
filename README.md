@@ -1,51 +1,115 @@
 <p align="center">
-  <img src="logo.svg" alt="elytPOS Logo" width="400">
+  <img src="logo.svg" alt="elytPOS Logo" width="250">
 </p>
 
-# elytPOS
+<h1 align="center">elytPOS</h1>
 
-A modern, efficient Point of Sale (POS) system built with Python and Qt (PySide6).
+<p align="center">
+  <strong>A high-performance, keyboard-centric Point of Sale system for modern retail.</strong>
+</p>
 
-## Features
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Qt-PySide6-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="Qt">
+  <img src="https://img.shields.io/badge/Database-PostgreSQL-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge" alt="License">
+</p>
 
-*   **Fast Billing:** Optimized for rapid keyboard-only entry.
-*   **Inventory Management:** Track stock, manage products, and handle barcodes.
-*   **Customer Management:** Maintain a customer database for quick lookups and history.
-*   **Scheme/Discount Management:** Flexible promotional schemes (BOGO, percentage off, etc.).
-*   **Multi-User & Security:** Role-based access control with a Superuser.
-*   **Modern UI:** Clean, dark-themed interface designed for ergonomics.
-*   **Robust Database:** Powered by PostgreSQL for reliability and data integrity.
-*   **Printing:** Direct thermal receipt printing support.
+---
 
-## Installation
+## 🚀 Overview
 
-1.  Ensure you have Python 3.10+ and PostgreSQL installed.
-2.  Clone the repository.
-3.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  Configure your database connection in `db.config` (created on first run).
+**elytPOS** is a modern, efficient, and ergonomically designed Point of Sale (POS) system tailored for rapid retail environments. Built with **Python** and **PySide6**, it prioritizes speed and reliability through a sophisticated keyboard-centric interface and a robust **PostgreSQL** backend.
 
-## Usage
+## ✨ Key Features
 
-Run the application:
-```bash
-python main.py
-```
+- ⚡ **Lightning Fast Billing:** Optimized for rapid, keyboard-driven data entry with minimal mouse reliance.
+- 📦 **Smart Inventory:** Comprehensive product management with support for barcodes, multiple UOMs (Units of Measure), and fuzzy search.
+- 💰 **Dynamic Schemes:** Implementation of complex promotional rules, including percentage discounts, absolute rate changes, and bulk quantity offers.
+- 👥 **Customer Relationship:** Integrated customer database with instant lookup and multi-year transaction history.
+- 🖨️ **Advanced Printing:** Customizable thermal receipt generation with multi-language support and shop branding.
+- 🔐 **Secure & Multi-User:** Role-based access control with encrypted password storage and automated database backups.
+- 🧮 **Built-in Calculator:** Seamless, non-modal GUI calculator with live evaluation and operation chaining.
 
-## Shortcuts
+## 🔐 Security & Roles
 
-*   **F2:** Save / Checkout
-*   **F3:** Product Search / Item Lookup
-*   **F4:** Clear Grid
-*   **F5:** Sales History
-*   **F6:** Hold Bill
-*   **F7:** Recall Held Bill
-*   **Esc:** Close Window / Quit
+elytPOS features a robust **Role-Based Access Control (RBAC)** system with three distinct roles: **Admin**, **Manager**, and **Staff**.
 
-## License
+For a detailed breakdown of permissions, see [USER_ROLES.md](user_roles.md).
 
-This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+## 🌍 Multi-Language Printing
 
-© 2026 Mohammed Adnan. All rights reserved.
+Provide a personalized experience by printing receipts in your customer's preferred language. Manage languages and item translations easily through the integrated Translation Engine.
+
+Learn more in [MULTILANGUAGE.md](multilanguage.md).
+
+## 🛠️ Tech Stack
+
+- **Frontend:** PySide6 (Qt for Python) with a custom modern dark theme.
+- **Backend:** Python 3.11+.
+- **Database:** PostgreSQL with `pg_trgm` extension for high-performance fuzzy matching.
+- **Printing:** CUPS (Linux/macOS) / Direct Printing (Windows) via `pycups` and Qt Print Support.
+
+## ⚙️ Installation & Setup
+
+### 📦 Recommended: Pre-built Binary
+The easiest way to run elytPOS is to download the latest executable for your operating system:
+1. Go to the [Releases](https://github.com/elytraviii/elytpos/releases) page.
+2. Download the binary corresponding to your OS (Linux, Windows, or macOS).
+3. Run the executable. No Python installation required!
+
+### 🛠️ Alternative: Run from Source
+If you prefer to run the application using Python:
+
+**Prerequisites:**
+- Python 3.11 or higher
+- PostgreSQL Server installed and running
+
+**Steps:**
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/elytraviii/elytpos.git
+   cd elytpos
+   ```
+
+2. **Setup Virtual Environment**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   ```
+
+3. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Launch**
+   ```bash
+   python main.py
+   ```
+   *The system will guide you through database and printer configuration on the first run.*
+
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| **F2** | Save / Checkout / Record Purchase |
+| **F3** | Smart Product Search |
+| **F4** | Clear Current Entry |
+| **F5** | View Sales History |
+| **F6** | Hold Current Bill |
+| **F7** | Recall Held Bill |
+| **F8** | Open Integrated Calculator |
+| **Ctrl + I** | Item Master (Inventory) |
+| **Esc** | Close Dialog / Exit Application |
+
+## 📜 License
+
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for the full text.
+
+---
+
+<p align="center">
+  Developed with ❤️ by <strong>Mohammed Adnan</strong><br>
+  © 2026 Mohammed Adnan. All rights reserved.
+</p>

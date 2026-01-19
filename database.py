@@ -154,7 +154,7 @@ class DatabaseManager:
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 full_name VARCHAR(100),
-                is_superuser BOOLEAN DEFAULT FALSE
+                role VARCHAR(20) DEFAULT 'staff'
             )
             """,
             """
@@ -236,7 +236,10 @@ class DatabaseManager:
             "ALTER TABLE scheme_products ALTER COLUMN min_qty TYPE DECIMAL(12, 3);",
             "ALTER TABLE scheme_products ALTER COLUMN max_qty TYPE DECIMAL(12, 3);",
             "ALTER TABLE scheme_products ALTER COLUMN benefit_value TYPE DECIMAL(12, 3);",
-            "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3);"
+            "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'staff';",
+            "UPDATE users SET role = 'admin' WHERE is_superuser = TRUE AND role = 'staff';",
+            "ALTER TABLE users DROP COLUMN IF EXISTS is_superuser;"
         ]
         conn = None
         try:
@@ -394,16 +397,16 @@ class DatabaseManager:
             translated_items.append(new_item)
         cur.close(); conn.close()
         return translated_items
-    def add_user(self, username, password, full_name, is_superuser=False):
+    def add_user(self, username, password, full_name, role='staff'):
         import hashlib
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO users (username, password, full_name, is_superuser) VALUES (%s, %s, %s, %s)
-                   ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, is_superuser = EXCLUDED.is_superuser""",
-                (username, pwd_hash, full_name, is_superuser)
+                """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role""",
+                (username, pwd_hash, full_name, role)
             )
             conn.commit()
             return True
@@ -415,7 +418,7 @@ class DatabaseManager:
     def get_users(self):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, username, full_name, is_superuser FROM users ORDER BY username")
+        cur.execute("SELECT id, username, full_name, role FROM users ORDER BY username")
         users = cur.fetchall()
         cur.close(); conn.close()
         return users
@@ -435,7 +438,7 @@ class DatabaseManager:
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, username, full_name, is_superuser FROM users WHERE username = %s AND password = %s", (username, pwd_hash))
+        cur.execute("SELECT id, username, full_name, role FROM users WHERE username = %s AND password = %s", (username, pwd_hash))
         user = cur.fetchone()
         cur.close(); conn.close()
         return user
