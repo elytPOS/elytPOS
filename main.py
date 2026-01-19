@@ -15,6 +15,7 @@ from PySide6.QtGui import QFont, QAction, QPalette, QColor, QKeyEvent, QPixmap, 
 from database import DatabaseManager
 from printer import ReceiptPrinter
 from calculator_gui import CalculatorDialog
+from help_system import HelpDialog
 from styles import MODERN_STYLE
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -1500,6 +1501,13 @@ class MainWindow(QMainWindow):
         calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
         calc_action.triggered.connect(self.open_calculator)
         file_menu.addAction(calc_action)
+
+        help_menu = menubar.addMenu("&Help")
+        help_action = QAction("&User Guide (F1)", self)
+        help_action.setShortcut("F1")
+        help_action.triggered.connect(self.open_help)
+        help_menu.addAction(help_action)
+
         central = QWidget(); self.setCentralWidget(central); layout = QVBoxLayout(central)
         header_row = QHBoxLayout()
         sales_grp = QGroupBox("Sales Entry")
@@ -1528,7 +1536,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_row)
         self.grid = ExcelTable(); self.grid.itemChanged.connect(self.handle_grid_change); layout.addWidget(self.grid)
         self.grid.setItemDelegateForColumn(0, FuzzyCompleterDelegate(self.db, self.grid))
-        footer = QHBoxLayout(); 
+        footer = QHBoxLayout()
         btn_layout = QHBoxLayout()
         btn_f2 = QPushButton("&Save (F2)"); btn_f2.clicked.connect(self.process_checkout)
         btn_f3 = QPushButton("S&earch (F3)"); btn_f3.clicked.connect(self.open_search_dialog)
@@ -1557,6 +1565,9 @@ class MainWindow(QMainWindow):
     def open_printer_config(self):
         dialog = PrinterConfigDialog(self.printer, self)
         dialog.exec()
+        self.showFullScreen()
+    def open_help(self):
+        HelpDialog(self).exec()
         self.showFullScreen()
     def open_inventory(self): InventoryDialog(self.db, self).exec(); self.showFullScreen()
     def open_scheme_entry(self, sid=None): SchemeEntryDialog(self.db, sid, self).exec(); self.showFullScreen()
@@ -1710,7 +1721,7 @@ class MainWindow(QMainWindow):
         qty = str(product[9]) if len(product) > 9 else "1.0"
         self.grid.setItem(row, 2, QTableWidgetItem(qty)); self.grid.setItem(row, 3, QTableWidgetItem(product[6]))
         self.update_mrp_dropdown(row, product[0], product[5], product[3])
-        self.grid.setItem(row, 5, QTableWidgetItem(f"{product[4]:.3f}")); 
+        self.grid.setItem(row, 5, QTableWidgetItem(f"{product[4]:.3f}"))
         self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
         self.grid.item(row, 1).setData(Qt.UserRole, product); self.recalc_row(row)
     def update_mrp_dropdown(self, row, product_id, uom, current_mrp):
