@@ -1,0 +1,8 @@
+[MASTER]
+extension-pkg-whitelist=PySide6
+
+[MESSAGES CONTROL]
+disable=
+    import-error,
+    no-name-in-module,
+    no-member
