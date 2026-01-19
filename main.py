@@ -17,8 +17,8 @@ from PySide6.QtCore import Qt, QDate, Signal, QEvent, QTimer
 from PySide6.QtGui import QFont, QAction, QPalette, QColor, QKeyEvent, QPixmap, QIcon
 from database import DatabaseManager
 from printer import ReceiptPrinter
-
-
+from calculator_gui import CalculatorDialog
+from styles import MODERN_STYLE
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -28,135 +28,6 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
-
-MODERN_STYLE = """
-    QWidget {
-        background-color: #1e1e2e;
-        color: #ffffff;
-    }
-    QMainWindow, QDialog {
-        background-color: #1e1e2e;
-        color: #ffffff;
-    }
-    QGroupBox {
-        border: 1px solid #45475a;
-        margin-top: 10px;
-        font-weight: bold;
-        color: #89b4fa; /* Soft Blue */
-        border-radius: 6px;
-    }
-    QGroupBox::title {
-        subcontrol-origin: margin;
-        subcontrol-position: top left;
-        padding: 0 5px;
-        background-color: #1e1e2e;
-    }
-    QLabel {
-        color: #ffffff;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-    }
-    QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QAbstractSpinBox, QComboBox {
-        background-color: #313244;
-        border: 1px solid #45475a;
-        padding: 6px;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-        color: #ffffff;
-        selection-background-color: #89b4fa;
-        selection-color: #1e1e2e;
-        border-radius: 4px;
-    }
-    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QAbstractSpinBox:focus, QComboBox:focus {
-        background-color: #45475a;
-        border: 1px solid #89b4fa;
-    }
-    QMenuBar {
-        background-color: #1e1e2e;
-        color: #ffffff;
-        border-bottom: 1px solid #45475a;
-    }
-    QMenuBar::item {
-        background-color: #1e1e2e;
-        color: #ffffff;
-        padding: 8px 12px;
-    }
-    QMenuBar::item:selected {
-        background-color: #313244;
-    }
-    QMenu {
-        background-color: #1e1e2e;
-        color: #ffffff;
-        border: 1px solid #45475a;
-    }
-    QMenu::item:selected {
-        background-color: #313244;
-    }
-    
-    QTableWidget {
-        background-color: #181825;
-        gridline-color: #313244;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-        border: 1px solid #45475a;
-        selection-background-color: #313244;
-        selection-color: #89b4fa;
-        color: #ffffff;
-        border-radius: 6px;
-        alternate-background-color: #181825;
-    }
-    QTableWidget QLineEdit {
-        background-color: #181825;
-        color: #ffffff;
-        border: 1px solid #89b4fa;
-    }
-    QHeaderView::section {
-        background-color: #313244;
-        padding: 6px;
-        border: 1px solid #45475a;
-        font-weight: bold;
-        color: #ffffff;
-        font-family: 'FiraCode Nerd Font', monospace;
-    }
-    QHeaderView::section:horizontal {
-        border-top: none;
-    }
-    QPushButton {
-        background-color: #313244;
-        border: 1px solid #45475a;
-        color: #ffffff;
-        padding: 8px 15px;
-        font-weight: bold;
-        font-family: 'FiraCode Nerd Font', monospace;
-        min-width: 80px;
-        border-radius: 4px;
-    }
-    QPushButton:hover {
-        background-color: #45475a;
-        border: 1px solid #585b70;
-    }
-    QPushButton:pressed {
-        background-color: #585b70;
-    }
-    
-    QFrame#EntryFrame {
-        background-color: #181825;
-        border: 1px solid #45475a;
-        border-radius: 6px;
-    }
-
-    QPushButton#btnSave { 
-        background-color: #89b4fa; 
-        color: #1e1e2e; 
-    } 
-    QPushButton#btnSave:hover { background-color: #b4befe; }
-    
-    QPushButton#btnCancel { 
-        background-color: #f38ba8; 
-        color: #1e1e2e; 
-    }
-    QPushButton#btnCancel:hover { background-color: #eba0ac; }
-"""
 
 class ProductSearchDialog(QDialog):
     def __init__(self, db_manager, parent=None):
@@ -1899,7 +1770,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if QMessageBox.question(self, "Confirm Exit", "Are you sure you want to quit?") == QMessageBox.Yes:
-            self.backup_on_exit()
+            if QMessageBox.question(self, "Backup", "Would you like to take a database backup before exiting?") == QMessageBox.Yes:
+                self.backup_on_exit()
             event.accept()
         else:
             event.ignore()
@@ -1947,6 +1819,10 @@ class MainWindow(QMainWindow):
         file_menu.addAction("&Maintenance", self.open_maintenance)
         file_menu.addAction("&Recycle Bin", self.open_recycle_bin)
         file_menu.addAction("Printer &Settings", self.open_printer_config)
+        calc_action = QAction("&Calculator (F8)", self)
+        calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
+        calc_action.triggered.connect(self.open_calculator)
+        file_menu.addAction(calc_action)
         central = QWidget(); self.setCentralWidget(central); layout = QVBoxLayout(central)
         header_row = QHBoxLayout()
         
@@ -1986,8 +1862,9 @@ class MainWindow(QMainWindow):
         btn_f5 = QPushButton("&History (F5)"); btn_f5.clicked.connect(self.view_history)
         btn_f6 = QPushButton("&Hold (F6)"); btn_f6.clicked.connect(self.hold_current_bill)
         btn_f7 = QPushButton("&Recall (F7)"); btn_f7.clicked.connect(self.recall_held_bill)
+        btn_calc = QPushButton("Ca&lc (F8)"); btn_calc.clicked.connect(self.open_calculator)
         btn_esc = QPushButton("&Quit (Esc)"); btn_esc.clicked.connect(self.close)
-        btn_layout.addWidget(btn_f2); btn_layout.addWidget(btn_f3); btn_layout.addWidget(btn_f4); btn_layout.addWidget(btn_f5); btn_layout.addWidget(btn_f6); btn_layout.addWidget(btn_f7); btn_layout.addWidget(btn_esc)
+        btn_layout.addWidget(btn_f2); btn_layout.addWidget(btn_f3); btn_layout.addWidget(btn_f4); btn_layout.addWidget(btn_f5); btn_layout.addWidget(btn_f6); btn_layout.addWidget(btn_f7); btn_layout.addWidget(btn_calc); btn_layout.addWidget(btn_esc)
         
         self.lbl_total_qty = QLabel("Qty: 0"); self.lbl_total_amt = QLabel("Total: 0.00"); self.lbl_total_amt.setStyleSheet("font-size: 24pt; font-weight: bold; color: #89b4fa;")
         
@@ -2036,6 +1913,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Access Denied", "Incorrect Password!")
         self.showFullScreen()
     def open_recycle_bin(self): RecycleBinDialog(self.db, self).exec(); self.showFullScreen()
+    def open_calculator(self):
+        if not hasattr(self, 'calc_dlg') or self.calc_dlg is None:
+            self.calc_dlg = CalculatorDialog(self)
+        self.calc_dlg.show()
+        self.calc_dlg.raise_()
+        self.calc_dlg.activateWindow()
+
     def view_history(self): SalesHistoryDialog(self.db, self.printer, self).exec(); self.showFullScreen()
 
     def handle_customer_lookup(self):
