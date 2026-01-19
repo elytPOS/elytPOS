@@ -156,11 +156,14 @@ class PrinterConfigDialog(QDialog):
         form = QFormLayout(tab)
         self.header_text = QLineEdit(self.config.get("header_text", "ELYT POS"))
         self.shop_name = QLineEdit(self.config.get("shop_name", "KIRANA STORE"))
+        self.tax_id = QLineEdit(self.config.get("tax_id", ""))
+        self.tax_id.setPlaceholderText("GST Number")
         self.footer_text = QTextEdit()
         self.footer_text.setPlainText(self.config.get("footer_text", "Thank you!").replace("<br/>", "\n"))
         self.footer_text.setFixedHeight(80)
         form.addRow("Header Title:", self.header_text)
         form.addRow("Shop Name:", self.shop_name)
+        form.addRow("GST Number:", self.tax_id)
         form.addRow("Footer Text:", self.footer_text)
         self.tabs.addTab(tab, "Content")
     def setup_options_tab(self):
@@ -181,6 +184,7 @@ class PrinterConfigDialog(QDialog):
             "font_size": self.font_size.currentText(),
             "header_text": self.header_text.text(),
             "shop_name": self.shop_name.text(),
+            "tax_id": self.tax_id.text(),
             "footer_text": self.footer_text.toPlainText(),
             "show_savings": self.show_savings.isChecked(),
             "show_mrp": self.show_mrp.isChecked()
