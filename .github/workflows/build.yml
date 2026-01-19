@@ -7,22 +7,27 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build ${{ matrix.artifact_name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: elytPOS-linux
-            executable_path: dist/elytPOS
+            artifact_name: elytPOS-linux-x64
+            executable_name: elytPOS
+          - os: ubuntu-22.04-arm
+            artifact_name: elytPOS-linux-arm64
+            executable_name: elytPOS
           - os: windows-latest
-            artifact_name: elytPOS-windows
-            executable_path: dist/elytPOS.exe
-          - os: macos-latest
-            artifact_name: elytPOS-macos
-            executable_path: dist/elytPOS
+            artifact_name: elytPOS-windows-x64
+            executable_name: elytPOS.exe
+          - os: macos-14
+            artifact_name: elytPOS-macos-arm64
+            executable_name: elytPOS
+          - os: macos-15-intel
+            artifact_name: elytPOS-macos-intel
+            executable_name: elytPOS
 
     steps:
       - name: Checkout code
@@ -34,33 +39,37 @@ jobs:
           python-version: '3.11'
 
       - name: Install System Dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libcups2-dev \
-            libxcb-cursor0 \
-            libxcb-icccm4 \
-            libxcb-image0 \
-            libxcb-keysyms1 \
-            libxcb-render-util0 \
-            libxcb-shape0 \
-            libxcb-util1 \
-            libxcb-xkb1 \
-            libxkbcommon-x11-0
-
-          # Install libtiff5 manually as it's not in Ubuntu 24.04 repos but needed by PySide6
-          wget -q http://security.ubuntu.com/ubuntu/pool/main/t/tiff/libtiff5_4.3.0-6ubuntu0.12_amd64.deb
-          sudo apt-get install -y ./libtiff5_4.3.0-6ubuntu0.12_amd64.deb
-          rm libtiff5_4.3.0-6ubuntu0.12_amd64.deb
+          
+          BASE_DEPS="libcups2-dev libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0"
+          
+          if [[ "${{ matrix.os }}" == "ubuntu-22.04-arm" ]]; then
+            # libtiff5 is available in 22.04 repos
+            sudo apt-get install -y $BASE_DEPS libtiff5
+            
+            # Manually install libwebp6 for ARM64 (PySide6 dependency missing in 22.04)
+            wget -q http://ports.ubuntu.com/pool/main/libw/libwebp/libwebp6_0.6.1-2ubuntu0.20.04.3_arm64.deb
+            sudo apt-get install -y ./libwebp6_0.6.1-2ubuntu0.20.04.3_arm64.deb
+            rm libwebp6_0.6.1-2ubuntu0.20.04.3_arm64.deb
+          else
+            # ubuntu-latest (24.04) x64
+            sudo apt-get install -y $BASE_DEPS
+            
+            # Manual install for libtiff5 on Ubuntu 24.04 (removed from repos)
+            wget -q http://security.ubuntu.com/ubuntu/pool/main/t/tiff/libtiff5_4.3.0-6ubuntu0.12_amd64.deb -O libtiff5.deb
+            sudo apt-get install -y ./libtiff5.deb
+            rm libtiff5.deb
+          fi
+        shell: bash
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller PySide6 psycopg2-binary
-          # Only install pycups on Linux/macOS (if headers available)
-          # On Windows, it will be skipped
-          if [ "${{ matrix.os }}" != "windows-latest" ]; then
+          # Only install pycups on Linux/macOS
+          if [ "${{ runner.os }}" != "Windows" ]; then
             pip install pycups || echo "pycups failed to install, continuing without it"
           fi
         shell: bash
@@ -74,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.executable_path }}
+          path: dist/${{ matrix.executable_name }}
 
   release:
     name: Create Release
@@ -91,18 +100,37 @@ jobs:
       - name: Prepare Release Files
         run: |
           mkdir release_files
-          cp artifacts/elytPOS-linux/elytPOS release_files/elytPOS-linux
-          cp artifacts/elytPOS-windows/elytPOS.exe release_files/elytPOS-windows.exe
-          cp artifacts/elytPOS-macos/elytPOS release_files/elytPOS-macos
+          
+          # Linux
+          if [ -f artifacts/elytPOS-linux-x64/elytPOS ]; then
+            cp artifacts/elytPOS-linux-x64/elytPOS release_files/elytPOS-linux-x64
+          fi
+          if [ -f artifacts/elytPOS-linux-arm64/elytPOS ]; then
+            cp artifacts/elytPOS-linux-arm64/elytPOS release_files/elytPOS-linux-arm64
+          fi
+          
+          # Windows
+          if [ -f artifacts/elytPOS-windows-x64/elytPOS.exe ]; then
+            cp artifacts/elytPOS-windows-x64/elytPOS.exe release_files/elytPOS-windows-x64.exe
+          fi
+          
+          # macOS
+          if [ -f artifacts/elytPOS-macos-arm64/elytPOS ]; then
+            cp artifacts/elytPOS-macos-arm64/elytPOS release_files/elytPOS-macos-arm64
+          fi
+          if [ -f artifacts/elytPOS-macos-intel/elytPOS ]; then
+            cp artifacts/elytPOS-macos-intel/elytPOS release_files/elytPOS-macos-intel
+          fi
+          
+          echo "Prepared files:"
+          ls -R release_files
         shell: bash
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release_files/elytPOS-linux
-            release_files/elytPOS-windows.exe
-            release_files/elytPOS-macos
+            release_files/*
           tag_name: v${{ github.run_number }}
           name: Release v${{ github.run_number }}
           draft: false
