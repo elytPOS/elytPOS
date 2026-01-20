@@ -43,6 +43,12 @@ Provide a personalized experience by printing receipts in your customer's prefer
 
 Learn more in [MULTILANGUAGE.md](multilanguage.md).
 
+## 🎨 Appearance Themes
+
+Customize your workspace with over 10 professional color schemes, ranging from the default **Mocha** dark theme to high-contrast **Latte** light mode and specialized palettes like **Nord**, **Dracula**, and **Gruvbox**.
+
+Explore all options in [THEME.md](theme.md).
+
 ## 🛠️ Tech Stack
 
 - **Frontend:** PySide6 (Qt for Python) with a custom modern dark theme.
