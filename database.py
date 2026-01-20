@@ -1,58 +1,86 @@
-import psycopg2
-from psycopg2 import sql
-import psycopg2.pool
+"""
+Database management system for elytPOS.
+"""
+
 import configparser
 import os
 import sys
+
+import psycopg2
+import psycopg2.pool
+
+from styles import get_app_path
+
+
 class PooledConnection:
+    """
+    Wrapper for a database connection retrieved from a pool.
+    """
+
     def __init__(self, pool, conn):
         self.pool = pool
         self.conn = conn
+
     def __getattr__(self, name):
+        """Delegate attribute access to the underlying connection."""
         return getattr(self.conn, name)
+
     def close(self):
+        """Return the connection to the pool instead of closing it."""
         if self.conn:
             self.pool.putconn(self.conn)
             self.conn = None
+
+
 class DatabaseManager:
+    """
+    Handles all database operations, connections, and migrations.
+    """
+
     def __init__(self):
         self.conn_params = self.load_config()
         self.pool = None
         self.init_pool()
         self.init_db()
+
     def init_pool(self):
+        """Initialize the threaded connection pool."""
         try:
             self.pool = psycopg2.pool.ThreadedConnectionPool(1, 20, **self.conn_params)
         except Exception as e:
             print(f"Error creating connection pool: {e}")
             raise e
+
     def load_config(self):
+        """Load database parameters from config file."""
         config = configparser.ConfigParser()
-        if getattr(sys, 'frozen', False):
-            application_path = os.path.dirname(sys.executable)
-        else:
-            application_path = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(application_path, 'db.config')
+        config_path = os.path.join(get_app_path(), "db.config")
         defaults = {
             "dbname": "elytpos_db",
             "user": "elytpos_user",
             "password": "elytpos_password",
             "host": "localhost",
-            "port": "5432"
+            "port": "5432",
         }
         if os.path.exists(config_path):
             config.read(config_path)
-            if 'postgresql' in config:
+            if "postgresql" in config:
                 for key in defaults:
-                    if key in config['postgresql']:
-                        defaults[key] = config['postgresql'][key]
+                    if key in config["postgresql"]:
+                        defaults[key] = config["postgresql"][key]
         return defaults
+
     def get_connection(self):
+        """Get a pooled database connection."""
         return PooledConnection(self.pool, self.pool.getconn())
+
     def close(self):
+        """Close the database connection pool."""
         if self.pool:
             self.pool.closeall()
+
     def init_db(self):
+        """Initialize the database tables and run migrations."""
         commands = [
             "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
             """
@@ -200,24 +228,53 @@ class DatabaseManager:
                 translated_name VARCHAR(255) NOT NULL,
                 UNIQUE(product_id, language_id)
             )
+            """,
             """
+            CREATE TABLE IF NOT EXISTS settings (
+                key VARCHAR(50) PRIMARY KEY,
+                value TEXT
+            )
+            """,
         ]
         migrations = [
-            "CREATE TABLE IF NOT EXISTS purchases (id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, supplier_name VARCHAR(100), invoice_no VARCHAR(50));",
-            "CREATE TABLE IF NOT EXISTS purchase_items (id SERIAL PRIMARY KEY, purchase_id INTEGER REFERENCES purchases(id) ON DELETE CASCADE, product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, purchase_rate DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
-            "CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, mobile VARCHAR(15) UNIQUE, address TEXT, email VARCHAR(100));",
+            "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(50) PRIMARY KEY, value TEXT);",
+            "INSERT INTO settings (key, value) VALUES ('theme', 'mocha') "
+            "ON CONFLICT (key) DO NOTHING;",
+            "CREATE TABLE IF NOT EXISTS purchases (id SERIAL PRIMARY KEY, "
+            "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, "
+            "supplier_name VARCHAR(100), invoice_no VARCHAR(50));",
+            "CREATE TABLE IF NOT EXISTS purchase_items (id SERIAL PRIMARY KEY, "
+            "purchase_id INTEGER REFERENCES purchases(id) ON DELETE CASCADE, "
+            "product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, "
+            "purchase_rate DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
+            "CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, "
+            "name VARCHAR(100) NOT NULL, mobile VARCHAR(15) UNIQUE, address TEXT, email VARCHAR(100));",
             "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id);",
-            "CREATE TABLE IF NOT EXISTS held_sales (id SERIAL PRIMARY KEY, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, user_id INTEGER REFERENCES users(id));",
-            "CREATE TABLE IF NOT EXISTS held_sale_items (id SERIAL PRIMARY KEY, held_sale_id INTEGER REFERENCES held_sales(id) ON DELETE CASCADE, product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, price_at_sale DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
-            "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username VARCHAR(50) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, full_name VARCHAR(100), is_superuser BOOLEAN DEFAULT FALSE);",
-            "CREATE TABLE IF NOT EXISTS languages (id SERIAL PRIMARY KEY, name VARCHAR(50) UNIQUE NOT NULL, code VARCHAR(10) UNIQUE);",
-            "CREATE TABLE IF NOT EXISTS product_translations (id SERIAL PRIMARY KEY, product_id INTEGER REFERENCES products(id) ON DELETE CASCADE, language_id INTEGER REFERENCES languages(id) ON DELETE CASCADE, translated_name VARCHAR(255) NOT NULL, UNIQUE(product_id, language_id));",
+            "CREATE TABLE IF NOT EXISTS held_sales (id SERIAL PRIMARY KEY, "
+            "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, "
+            "user_id INTEGER REFERENCES users(id));",
+            "CREATE TABLE IF NOT EXISTS held_sale_items (id SERIAL PRIMARY KEY, "
+            "held_sale_id INTEGER REFERENCES held_sales(id) ON DELETE CASCADE, "
+            "product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, "
+            "price_at_sale DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
+            "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, "
+            "username VARCHAR(50) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, "
+            "full_name VARCHAR(100), is_superuser BOOLEAN DEFAULT FALSE);",
+            "CREATE TABLE IF NOT EXISTS languages (id SERIAL PRIMARY KEY, "
+            "name VARCHAR(50) UNIQUE NOT NULL, code VARCHAR(10) UNIQUE);",
+            "CREATE TABLE IF NOT EXISTS product_translations (id SERIAL PRIMARY KEY, "
+            "product_id INTEGER REFERENCES products(id) ON DELETE CASCADE, "
+            "language_id INTEGER REFERENCES languages(id) ON DELETE CASCADE, "
+            "translated_name VARCHAR(255) NOT NULL, UNIQUE(product_id, language_id));",
             "ALTER TABLE uoms ADD COLUMN IF NOT EXISTS alias VARCHAR(10) UNIQUE;",
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
-            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS qty DECIMAL(12, 3) NOT NULL DEFAULT 1.0;",
-            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3) NOT NULL DEFAULT 0;",
-            "ALTER TABLE products ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3) NOT NULL DEFAULT 0;",
+            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS qty "
+            "DECIMAL(12, 3) NOT NULL DEFAULT 1.0;",
+            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS mrp "
+            "DECIMAL(12, 3) NOT NULL DEFAULT 0;",
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS mrp "
+            "DECIMAL(12, 3) NOT NULL DEFAULT 0;",
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS base_uom VARCHAR(20) DEFAULT 'pcs';",
             "ALTER TABLE products ALTER COLUMN price TYPE DECIMAL(12, 3);",
             "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20);",
@@ -239,7 +296,7 @@ class DatabaseManager:
             "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'staff';",
             "UPDATE users SET role = 'admin' WHERE is_superuser = TRUE AND role = 'staff';",
-            "ALTER TABLE users DROP COLUMN IF EXISTS is_superuser;"
+            "ALTER TABLE users DROP COLUMN IF EXISTS is_superuser;",
         ]
         conn = None
         try:
@@ -259,7 +316,7 @@ class DatabaseManager:
                     conn.rollback()
             cur.execute("SELECT COUNT(*) FROM uoms")
             if cur.fetchone()[0] == 0:
-                default_uoms = ['pcs', 'kg', 'g', 'ltr', 'ml', 'box', 'pkt']
+                default_uoms = ["pcs", "kg", "g", "ltr", "ml", "box", "pkt"]
                 for u in default_uoms:
                     try:
                         cur.execute("INSERT INTO uoms (name) VALUES (%s)", (u,))
@@ -272,14 +329,15 @@ class DatabaseManager:
         finally:
             if conn is not None:
                 conn.close()
+
     def add_uom(self, name, alias=None):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO uoms (name, alias) VALUES (%s, %s) 
-                   ON CONFLICT (name) DO UPDATE SET alias = COALESCE(EXCLUDED.alias, uoms.alias)""", 
-                (name, alias)
+                """INSERT INTO uoms (name, alias) VALUES (%s, %s)
+                   ON CONFLICT (name) DO UPDATE SET alias = COALESCE(EXCLUDED.alias, uoms.alias)""",
+                (name, alias),
             )
             conn.commit()
             return True
@@ -289,6 +347,7 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def get_uoms(self):
         conn = self.get_connection()
         cur = conn.cursor()
@@ -297,6 +356,7 @@ class DatabaseManager:
         cur.close()
         conn.close()
         return uoms
+
     def get_uom_map(self):
         uoms = self.get_uoms()
         mapping = {}
@@ -304,6 +364,7 @@ class DatabaseManager:
             if alias:
                 mapping[alias.lower()] = name
         return mapping
+
     def delete_uom(self, name):
         conn = self.get_connection()
         cur = conn.cursor()
@@ -319,14 +380,15 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def add_language(self, name, code=None):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 """INSERT INTO languages (name, code) VALUES (%s, %s)
-                   ON CONFLICT (name) DO UPDATE SET code = EXCLUDED.code""", 
-                (name, code)
+                   ON CONFLICT (name) DO UPDATE SET code = EXCLUDED.code""",
+                (name, code),
             )
             conn.commit()
             return True
@@ -334,14 +396,18 @@ class DatabaseManager:
             print(f"Error adding language: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_languages(self):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT id, name, code FROM languages ORDER BY name")
         langs = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return langs
+
     def delete_language(self, lang_id):
         conn = self.get_connection()
         cur = conn.cursor()
@@ -352,16 +418,19 @@ class DatabaseManager:
         except Exception:
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def add_translation(self, product_id, language_id, translated_name):
+        """Add translation."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO product_translations (product_id, language_id, translated_name) 
-                   VALUES (%s, %s, %s) 
+            """INSERT INTO product_translations (product_id, language_id, translated_name)
+                   VALUES (%s, %s, %s)
                    ON CONFLICT (product_id, language_id) DO UPDATE SET translated_name = EXCLUDED.translated_name""",
-                (product_id, language_id, translated_name)
+                (product_id, language_id, translated_name),
             )
             conn.commit()
             return True
@@ -369,44 +438,60 @@ class DatabaseManager:
             print(f"Error adding translation: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_translations(self, product_id):
+        """Get translations."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT l.id, l.name, pt.translated_name 
+        cur.execute(
+        """
+            SELECT l.id, l.name, pt.translated_name
             FROM product_translations pt
             JOIN languages l ON pt.language_id = l.id
             WHERE pt.product_id = %s
-        """, (product_id,))
+            """,
+            (product_id,),
+        )
         trans = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return trans
+
     def get_translated_items(self, items, language_id):
+        """Get translated items."""
         if not language_id:
             return items
         conn = self.get_connection()
         cur = conn.cursor()
         translated_items = []
         for item in items:
-            cur.execute("SELECT translated_name FROM product_translations WHERE product_id = %s AND language_id = %s", (item['id'], language_id))
+            cur.execute(
+                "SELECT translated_name FROM product_translations WHERE product_id = %s AND language_id = %s",
+                (item["id"], language_id),
+            )
             res = cur.fetchone()
             new_item = item.copy()
             if res:
-                new_item['name'] = res[0]
+                new_item["name"] = res[0]
             translated_items.append(new_item)
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return translated_items
-    def add_user(self, username, password, full_name, role='staff'):
+
+    def add_user(self, username, password, full_name, role="staff"):
+        """Add user."""
         import hashlib
+
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
+            """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
                    ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role""",
-                (username, pwd_hash, full_name, role)
+                (username, pwd_hash, full_name, role),
             )
             conn.commit()
             return True
@@ -414,15 +499,21 @@ class DatabaseManager:
             print(f"Error adding user: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_users(self):
+        """Get users."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT id, username, full_name, role FROM users ORDER BY username")
         users = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return users
+
     def delete_user(self, user_id):
+        """Delete user."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -432,25 +523,33 @@ class DatabaseManager:
         except Exception:
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def authenticate_user(self, username, password):
         import hashlib
+
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, username, full_name, role FROM users WHERE username = %s AND password = %s", (username, pwd_hash))
+        cur.execute(
+            "SELECT id, username, full_name, role FROM users WHERE username = %s AND password = %s",
+            (username, pwd_hash),
+        )
         user = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return user
+
     def add_customer(self, name, mobile, address=None, email=None):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO customers (name, mobile, address, email) VALUES (%s, %s, %s, %s) 
+                """INSERT INTO customers (name, mobile, address, email) VALUES (%s, %s, %s, %s)
                    ON CONFLICT (mobile) DO UPDATE SET name = EXCLUDED.name, address = EXCLUDED.address, email = EXCLUDED.email
                    RETURNING id""",
-                (name, mobile, address, email)
+                (name, mobile, address, email),
             )
             cid = cur.fetchone()[0]
             conn.commit()
@@ -459,31 +558,44 @@ class DatabaseManager:
             print(f"Error adding customer: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_customers(self):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, mobile, address, email FROM customers ORDER BY name")
+        cur.execute(
+            "SELECT id, name, mobile, address, email FROM customers ORDER BY name"
+        )
         customers = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return customers
+
     def search_customers(self, query):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT id, name, mobile, address, email FROM customers WHERE name ILIKE %s OR mobile ILIKE %s",
-            (f"%{query}%", f"%{query}%")
+            (f"%{query}%", f"%{query}%"),
         )
         customers = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return customers
+
     def get_customer_by_mobile(self, mobile):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, mobile, address, email FROM customers WHERE mobile = %s", (mobile,))
+        cur.execute(
+            "SELECT id, name, mobile, address, email FROM customers WHERE mobile = %s",
+            (mobile,),
+        )
         customer = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return customer
+
     def delete_customer(self, cid):
         conn = self.get_connection()
         cur = conn.cursor()
@@ -491,27 +603,40 @@ class DatabaseManager:
             cur.execute("DELETE FROM customers WHERE id = %s", (cid,))
             conn.commit()
             return True
-        except: return False
-        finally: cur.close(); conn.close()
-    def record_purchase(self, supplier_name, invoice_no, items, total_amount, timestamp=None):
+        except Exception:
+            return False
+        finally:
+            cur.close()
+            conn.close()
+
+    def record_purchase(
+        self, supplier_name, invoice_no, items, total_amount, timestamp=None
+    ):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             if timestamp:
                 cur.execute(
                     "INSERT INTO purchases (supplier_name, invoice_no, total_amount, timestamp) VALUES (%s, %s, %s, %s) RETURNING id",
-                    (supplier_name, invoice_no, total_amount, timestamp)
+                    (supplier_name, invoice_no, total_amount, timestamp),
                 )
             else:
                 cur.execute(
                     "INSERT INTO purchases (supplier_name, invoice_no, total_amount) VALUES (%s, %s, %s) RETURNING id",
-                    (supplier_name, invoice_no, total_amount)
+                    (supplier_name, invoice_no, total_amount),
                 )
             purchase_id = cur.fetchone()[0]
             for item in items:
                 cur.execute(
                     "INSERT INTO purchase_items (purchase_id, product_id, quantity, purchase_rate, uom, mrp) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (purchase_id, item['pid'], item['qty'], item['rate'], item['uom'], item.get('mrp'))
+                    (
+                        purchase_id,
+                        item["pid"],
+                        item["qty"],
+                        item["rate"],
+                        item["uom"],
+                        item.get("mrp"),
+                    ),
                 )
             conn.commit()
             return purchase_id
@@ -520,61 +645,93 @@ class DatabaseManager:
             print(f"Error recording purchase: {e}")
             return None
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_purchase_history(self):
+        """Get purchase history."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, timestamp, supplier_name, invoice_no, total_amount FROM purchases ORDER BY timestamp DESC")
+        cur.execute(
+            "SELECT id, timestamp, supplier_name, invoice_no, total_amount FROM purchases ORDER BY timestamp DESC"
+        )
         purchases = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return purchases
+
     def get_item_purchase_register(self, product_id):
+        """Get item purchase register."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+        """
             SELECT p.timestamp, p.supplier_name, p.invoice_no, pi.quantity, pi.purchase_rate, pi.uom, pi.mrp
             FROM purchase_items pi
             JOIN purchases p ON pi.purchase_id = p.id
             WHERE pi.product_id = %s
             ORDER BY p.timestamp DESC
-        """, (product_id,))
+            """,
+            (product_id,),
+        )
         register = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return register
+
     def search_purchases_by_item(self, query):
+        """Search purchases by item."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+        """
             SELECT DISTINCT p.id, p.timestamp, p.supplier_name, p.invoice_no, p.total_amount
             FROM purchases p
             JOIN purchase_items pi ON p.id = pi.purchase_id
             JOIN products pr ON pi.product_id = pr.id
             WHERE pr.name ILIKE %s OR pr.barcode ILIKE %s
             ORDER BY p.timestamp DESC
-        """, (f"%{query}%", f"%{query}%"))
+            """,
+            (f"%{query}%", f"%{query}%"),
+        )
         purchases = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return purchases
+
     def get_suppliers(self):
+        """Get suppliers."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT DISTINCT supplier_name FROM purchases WHERE supplier_name IS NOT NULL ORDER BY supplier_name")
+        cur.execute(
+            "SELECT DISTINCT supplier_name FROM purchases WHERE supplier_name IS NOT NULL ORDER BY supplier_name"
+        )
         suppliers = [r[0] for r in cur.fetchall()]
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return suppliers
+
     def hold_sale(self, items, total_amount, user_id):
+        """Hold sale."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "INSERT INTO held_sales (total_amount, user_id) VALUES (%s, %s) RETURNING id",
-                (total_amount, user_id)
+                (total_amount, user_id),
             )
             held_id = cur.fetchone()[0]
             for item in items:
                 cur.execute(
                     "INSERT INTO held_sale_items (held_sale_id, product_id, quantity, price_at_sale, uom, mrp) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (held_id, item['id'], item['quantity'], item['price'], item['uom'], item.get('mrp'))
+                    (
+                        held_id,
+                        item["id"],
+                        item["quantity"],
+                        item["price"],
+                        item["uom"],
+                        item.get("mrp"),
+                    ),
                 )
             conn.commit()
             return held_id
@@ -583,31 +740,51 @@ class DatabaseManager:
             print(f"Error holding sale: {e}")
             return None
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_held_sales(self):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT h.id, h.timestamp, h.total_amount, u.username 
+            SELECT h.id, h.timestamp, h.total_amount, u.username
             FROM held_sales h
             LEFT JOIN users u ON h.user_id = u.id
             ORDER BY h.timestamp DESC
-        """)
+            """)
         sales = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return sales
+
     def get_held_sale_items(self, held_id):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT p.name, hi.quantity, hi.price_at_sale, hi.uom, hi.product_id, p.barcode, hi.mrp
             FROM held_sale_items hi
             JOIN products p ON hi.product_id = p.id
             WHERE hi.held_sale_id = %s
-        """, (held_id,))
+            """,
+            (held_id,),
+        )
         items = cur.fetchall()
-        cur.close(); conn.close()
-        return [{'name': i[0], 'quantity': float(i[1]), 'price': float(i[2]), 'uom': i[3], 'id': i[4], 'barcode': i[5], 'mrp': float(i[6]) if i[6] else 0.0} for i in items]
+        cur.close()
+        conn.close()
+        return [
+            {
+                "name": i[0],
+                "quantity": float(i[1]),
+                "price": float(i[2]),
+                "uom": i[3],
+                "id": i[4],
+                "barcode": i[5],
+                "mrp": float(i[6]) if i[6] else 0.0,
+            }
+            for i in items
+        ]
+
     def delete_held_sale(self, held_id):
         conn = self.get_connection()
         cur = conn.cursor()
@@ -615,27 +792,35 @@ class DatabaseManager:
             cur.execute("DELETE FROM held_sales WHERE id = %s", (held_id,))
             conn.commit()
             return True
-        except: return False
-        finally: cur.close(); conn.close()
+        except Exception:
+            return False
+        finally:
+            cur.close()
+            conn.close()
+
     def reindex_database(self):
         conn = self.get_connection()
         conn.autocommit = True
         cur = conn.cursor()
         try:
-            cur.execute("REINDEX DATABASE " + self.conn_params['dbname'])
+            cur.execute("REINDEX DATABASE " + self.conn_params["dbname"])
             return True
         except Exception as e:
             print(f"Reindex error: {e}")
             return False
         finally:
-            cur.close(); conn.close()
-    def add_product(self, name, barcode, mrp, price, category="General", base_uom="pcs"):
+            cur.close()
+            conn.close()
+
+    def add_product(
+        self, name, barcode, mrp, price, category="General", base_uom="pcs"
+    ):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "INSERT INTO products (name, barcode, mrp, price, category, base_uom) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                (name, barcode, mrp, price, category, base_uom)
+                (name, barcode, mrp, price, category, base_uom),
             )
             pid = cur.fetchone()[0]
             conn.commit()
@@ -646,13 +831,15 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def update_product(self, product_id, name, barcode, mrp, price, category, base_uom):
+        """Update product."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "UPDATE products SET name=%s, barcode=%s, mrp=%s, price=%s, category=%s, base_uom=%s WHERE id=%s",
-                (name, barcode, mrp, price, category, base_uom, product_id)
+                (name, barcode, mrp, price, category, base_uom, product_id),
             )
             conn.commit()
             return True
@@ -662,13 +849,15 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def add_alias(self, product_id, barcode, uom, mrp, price, factor, qty=1.0):
+        """Add alias."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "INSERT INTO product_aliases (product_id, barcode, uom, mrp, price, factor, qty) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (product_id, barcode, uom, mrp, price, factor, qty)
+                (product_id, barcode, uom, mrp, price, factor, qty),
             )
             conn.commit()
             return True
@@ -678,15 +867,22 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def get_aliases(self, product_id):
+        """Get aliases."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, barcode, uom, mrp, price, factor, qty FROM product_aliases WHERE product_id = %s", (product_id,))
+        cur.execute(
+            "SELECT id, barcode, uom, mrp, price, factor, qty FROM product_aliases WHERE product_id = %s",
+            (product_id,),
+        )
         aliases = cur.fetchall()
         cur.close()
         conn.close()
         return aliases
+
     def delete_alias(self, alias_id):
+        """Delete alias."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -698,204 +894,398 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
+
     def delete_product(self, product_id):
+        """Delete product."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("UPDATE products SET is_deleted = TRUE, deleted_at = CURRENT_TIMESTAMP WHERE id = %s", (product_id,))
+            cur.execute(
+                "UPDATE products SET is_deleted = TRUE, deleted_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (product_id,),
+            )
             conn.commit()
             return True
         except Exception as e:
             print(f"Error deleting product: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def restore_product(self, product_id):
+        """Restore product."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("UPDATE products SET is_deleted = FALSE, deleted_at = NULL WHERE id = %s", (product_id,))
+            cur.execute(
+                "UPDATE products SET is_deleted = FALSE, deleted_at = NULL WHERE id = %s",
+                (product_id,),
+            )
             conn.commit()
             return True
         except Exception as e:
             print(f"Error restoring product: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_deleted_products(self):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, barcode, mrp, price, category, base_uom, deleted_at FROM products WHERE is_deleted = TRUE ORDER BY deleted_at DESC")
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom, deleted_at FROM products WHERE is_deleted = TRUE ORDER BY deleted_at DESC"
+        )
         products = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return products
+
     def purge_old_deleted_products(self):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute("""
-                DELETE FROM products 
-                WHERE is_deleted = TRUE 
+                DELETE FROM products
+                WHERE is_deleted = TRUE
                 AND deleted_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
                 AND id NOT IN (SELECT DISTINCT product_id FROM sale_items WHERE product_id IS NOT NULL)
                 AND id NOT IN (SELECT DISTINCT product_id FROM purchase_items WHERE product_id IS NOT NULL)
                 AND id NOT IN (SELECT DISTINCT product_id FROM held_sale_items WHERE product_id IS NOT NULL)
-            """)
+                """)
             conn.commit()
         except Exception as e:
             print(f"Error purging products: {e}")
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def search_products(self, query):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
             """
             SELECT id, name, barcode, mrp, price, category, uom FROM (
-                SELECT p.id, p.name, p.barcode as barcode, p.mrp, p.price, p.category, p.base_uom as uom,
-                       similarity(p.name, %s) as sim_n, similarity(p.barcode, %s) as sim_b, p.is_deleted
+                SELECT p.id, p.name, p.barcode as barcode, p.mrp, p.price, p.category, 
+                       p.base_uom as uom, similarity(p.name, %s) as sim_n, 
+                       similarity(p.barcode, %s) as sim_b, p.is_deleted
                 FROM products p
                 UNION ALL
-                SELECT p.id, p.name, pa.barcode as barcode, pa.mrp, pa.price, p.category, pa.uom as uom,
-                       similarity(p.name, %s) as sim_n, similarity(pa.barcode, %s) as sim_b, p.is_deleted
+                SELECT p.id, p.name, pa.barcode as barcode, pa.mrp, pa.price, p.category, 
+                       pa.uom as uom, similarity(p.name, %s) as sim_n, 
+                       similarity(pa.barcode, %s) as sim_b, p.is_deleted
                 FROM product_aliases pa
                 JOIN products p ON pa.product_id = p.id
             ) as combined
-            WHERE (sim_n > 0.15 OR sim_b > 0.15 OR name ILIKE %s OR barcode ILIKE %s) AND is_deleted = FALSE
+            WHERE (sim_n > 0.15 OR sim_b > 0.15 OR name ILIKE %s OR barcode ILIKE %s) 
+            AND is_deleted = FALSE
             ORDER BY GREATEST(sim_n, sim_b) DESC, name
             LIMIT 15
             """,
-            (query, query, query, query, f"%{query}%", f"%{query}%")
+            (query, query, query, query, f"%{query}%", f"%{query}%"),
         )
         products = cur.fetchall()
         cur.close()
         conn.close()
         return products
+
     def get_all_products(self):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE is_deleted = FALSE ORDER BY name")
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE is_deleted = FALSE ORDER BY name"
+        )
         products = cur.fetchall()
         cur.close()
         conn.close()
         return products
+
     def find_product_by_barcode(self, barcode):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE barcode = %s AND is_deleted = FALSE", (barcode,))
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE barcode = %s AND is_deleted = FALSE",
+            (barcode,),
+        )
         product = cur.fetchone()
         if product:
-            res = (product[0], product[1], product[2], product[3], product[4], product[5], product[6], 1.0, False, 1.0, product[4], product[3])
-            cur.close(); conn.close()
+            res = (
+                product[0],
+                product[1],
+                product[2],
+                product[3],
+                product[4],
+                product[5],
+                product[6],
+                1.0,
+                False,
+                1.0,
+                product[4],
+                product[3],
+            )
+            cur.close()
+            conn.close()
             return res
-        cur.execute("""
+        cur.execute(
+        """
             SELECT p.id, p.name, a.barcode, a.mrp, a.price, p.category, a.uom, a.factor, a.qty, p.price as base_price, p.mrp as base_mrp
             FROM product_aliases a
             JOIN products p ON a.product_id = p.id
             WHERE a.barcode = %s AND p.is_deleted = FALSE
-        """, (barcode,))
+            """,
+            (barcode,),
+        )
         alias = cur.fetchone()
         cur.close()
         conn.close()
         if alias:
-            return (alias[0], alias[1], alias[2], alias[3], alias[4], alias[5], alias[6], alias[7], True, alias[8], alias[9], alias[10])
+            return (
+                alias[0],
+                alias[1],
+                alias[2],
+                alias[3],
+                alias[4],
+                alias[5],
+                alias[6],
+                alias[7],
+                True,
+                alias[8],
+                alias[9],
+                alias[10],
+            )
         return None
+
     def find_product_smart(self, query):
+        """Find product smart."""
         res = self.find_product_by_barcode(query)
-        if res: return res
+        if res:
+            return res
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE", (query,))
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE",
+            (query,),
+        )
         p = cur.fetchone()
         if p:
-            res = (p[0], p[1], p[2], p[3], p[4], p[5], p[6], 1.0, False, 1.0, p[4], p[3])
-            cur.close(); conn.close()
+            res = (
+                p[0],
+                p[1],
+                p[2],
+                p[3],
+                p[4],
+                p[5],
+                p[6],
+                1.0,
+                False,
+                1.0,
+                p[4],
+                p[3],
+            )
+            cur.close()
+            conn.close()
             return res
-        cur.execute("SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE ORDER BY name LIMIT 1", (f"%{query}%",))
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE ORDER BY name LIMIT 1",
+            (f"%{query}%",),
+        )
         p = cur.fetchone()
         if p:
-            res = (p[0], p[1], p[2], p[3], p[4], p[5], p[6], 1.0, False, 1.0, p[4], p[3])
-            cur.close(); conn.close()
+            res = (
+                p[0],
+                p[1],
+                p[2],
+                p[3],
+                p[4],
+                p[5],
+                p[6],
+                1.0,
+                False,
+                1.0,
+                p[4],
+                p[3],
+            )
+            cur.close()
+            conn.close()
             return res
-        cur.execute("""
-            SELECT id, name, barcode, mrp, price, category, base_uom, 
+        cur.execute(
+        """
+            SELECT id, name, barcode, mrp, price, category, base_uom,
                    GREATEST(similarity(name, %s), similarity(barcode, %s)) as sim
-            FROM products 
+            FROM products
             WHERE (similarity(name, %s) > 0.3 OR similarity(barcode, %s) > 0.3) AND is_deleted = FALSE
             ORDER BY sim DESC LIMIT 1
-        """, (query, query, query, query))
+            """,
+            (query, query, query, query),
+        )
         p_fuzzy = cur.fetchone()
-        cur.execute("""
+        cur.execute(
+        """
             SELECT p.id, p.name, a.barcode, a.mrp, a.price, p.category, a.uom, a.factor, a.qty, p.price as base_price, p.mrp as base_mrp,
                    similarity(a.barcode, %s) as sim
             FROM product_aliases a
             JOIN products p ON a.product_id = p.id
             WHERE similarity(a.barcode, %s) > 0.3 AND p.is_deleted = FALSE
             ORDER BY sim DESC LIMIT 1
-        """, (query, query))
+            """,
+            (query, query),
+        )
         a_fuzzy = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         if p_fuzzy and a_fuzzy:
             if p_fuzzy[7] >= a_fuzzy[11]:
-                return (p_fuzzy[0], p_fuzzy[1], p_fuzzy[2], p_fuzzy[3], p_fuzzy[4], p_fuzzy[5], p_fuzzy[6], 1.0, False, 1.0, p_fuzzy[4], p_fuzzy[3])
-            else:
-                return (a_fuzzy[0], a_fuzzy[1], a_fuzzy[2], a_fuzzy[3], a_fuzzy[4], a_fuzzy[5], a_fuzzy[6], a_fuzzy[7], True, a_fuzzy[8], a_fuzzy[9], a_fuzzy[10])
-        elif p_fuzzy:
-            return (p_fuzzy[0], p_fuzzy[1], p_fuzzy[2], p_fuzzy[3], p_fuzzy[4], p_fuzzy[5], p_fuzzy[6], 1.0, False, 1.0, p_fuzzy[4], p_fuzzy[3])
-        elif a_fuzzy:
-            return (a_fuzzy[0], a_fuzzy[1], a_fuzzy[2], a_fuzzy[3], a_fuzzy[4], a_fuzzy[5], a_fuzzy[6], a_fuzzy[7], True, a_fuzzy[8], a_fuzzy[9], a_fuzzy[10])
+                return (
+                    p_fuzzy[0],
+                    p_fuzzy[1],
+                    p_fuzzy[2],
+                    p_fuzzy[3],
+                    p_fuzzy[4],
+                    p_fuzzy[5],
+                    p_fuzzy[6],
+                    1.0,
+                    False,
+                    1.0,
+                    p_fuzzy[4],
+                    p_fuzzy[3],
+                )
+            return (
+                a_fuzzy[0],
+                a_fuzzy[1],
+                a_fuzzy[2],
+                a_fuzzy[3],
+                a_fuzzy[4],
+                a_fuzzy[5],
+                a_fuzzy[6],
+                a_fuzzy[7],
+                True,
+                a_fuzzy[8],
+                a_fuzzy[9],
+                a_fuzzy[10],
+            )
+        if p_fuzzy:
+            return (
+                p_fuzzy[0],
+                p_fuzzy[1],
+                p_fuzzy[2],
+                p_fuzzy[3],
+                p_fuzzy[4],
+                p_fuzzy[5],
+                p_fuzzy[6],
+                1.0,
+                False,
+                1.0,
+                p_fuzzy[4],
+                p_fuzzy[3],
+            )
+        if a_fuzzy:
+            return (
+                a_fuzzy[0],
+                a_fuzzy[1],
+                a_fuzzy[2],
+                a_fuzzy[3],
+                a_fuzzy[4],
+                a_fuzzy[5],
+                a_fuzzy[6],
+                a_fuzzy[7],
+                True,
+                a_fuzzy[8],
+                a_fuzzy[9],
+                a_fuzzy[10],
+            )
         return None
     def get_product_uom_data(self, product_id, uom):
+        """Get product uom data."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT base_uom, price, mrp FROM products WHERE id = %s", (product_id,))
+        cur.execute(
+            "SELECT base_uom, price, mrp FROM products WHERE id = %s", (product_id,)
+        )
         p = cur.fetchone()
         if p and p[0] == uom:
-            res = {'price': float(p[1]), 'mrp': float(p[2]), 'factor': 1.0, 'uom': p[0], 'base_price': float(p[1]), 'base_mrp': float(p[2])}
-            cur.close(); conn.close()
+            res = {
+                "price": float(p[1]),
+                "mrp": float(p[2]),
+                "factor": 1.0,
+                "uom": p[0],
+                "base_price": float(p[1]),
+                "base_mrp": float(p[2]),
+            }
+            cur.close()
+            conn.close()
             return res
-        cur.execute("SELECT price, factor, uom, mrp FROM product_aliases WHERE product_id = %s AND uom = %s", (product_id, uom))
+        cur.execute(
+            "SELECT price, factor, uom, mrp FROM product_aliases WHERE product_id = %s AND uom = %s",
+            (product_id, uom),
+        )
         a = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         if a:
-            return {'price': float(a[0]), 'mrp': float(a[3]), 'factor': float(a[1]), 'uom': a[2], 'base_price': float(p[1]) if p else 0.0, 'base_mrp': float(p[2]) if p else 0.0}
+            return {
+                "price": float(a[0]),
+                "mrp": float(a[3]),
+                "factor": float(a[1]),
+                "uom": a[2],
+                "base_price": float(p[1]) if p else 0.0,
+                "base_mrp": float(p[2]) if p else 0.0,
+            }
         return None
+
     def get_available_mrps(self, product_id, uom):
+        """Get available mrps."""
         conn = self.get_connection()
         cur = conn.cursor()
         res = []
-        cur.execute("SELECT mrp, price FROM products WHERE id = %s AND base_uom = %s", (product_id, uom))
+        cur.execute(
+            "SELECT mrp, price FROM products WHERE id = %s AND base_uom = %s",
+            (product_id, uom),
+        )
         base = cur.fetchone()
         if base:
-            res.append({'mrp': float(base[0]), 'price': float(base[1])})
-        cur.execute("SELECT mrp, price FROM product_aliases WHERE product_id = %s AND uom = %s", (product_id, uom))
+            res.append({"mrp": float(base[0]), "price": float(base[1])})
+        cur.execute(
+            "SELECT mrp, price FROM product_aliases WHERE product_id = %s AND uom = %s",
+            (product_id, uom),
+        )
         for row in cur.fetchall():
-            res.append({'mrp': float(row[0]), 'price': float(row[1])})
-        cur.close(); conn.close()
+            res.append({"mrp": float(row[0]), "price": float(row[1])})
+        cur.close()
+        conn.close()
         unique_res = []
         seen = set()
         for item in res:
-            pair = (item['mrp'], item['price'])
+            pair = (item["mrp"], item["price"])
             if pair not in seen:
                 unique_res.append(item)
                 seen.add(pair)
         return unique_res
+
     def add_scheme(self, name, valid_from, valid_to, items_data):
+        """Add scheme."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "INSERT INTO schemes (name, valid_from, valid_to) VALUES (%s, %s, %s) RETURNING id",
-                (name, valid_from, valid_to)
+                (name, valid_from, valid_to),
             )
             scheme_id = cur.fetchone()[0]
             for item in items_data:
                 cur.execute(
-                    """INSERT INTO scheme_products 
-                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value) 
+                """INSERT INTO scheme_products
+                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (scheme_id, item['pid'], item['min_qty'], item['max_qty'], item['target_uom'], 
-                     item['benefit_type'], item['benefit_value'])
+                    (
+                        scheme_id,
+                        item["pid"],
+                        item["min_qty"],
+                        item["max_qty"],
+                        item["target_uom"],
+                        item["benefit_type"],
+                        item["benefit_value"],
+                    ),
                 )
             conn.commit()
             return True
@@ -903,23 +1293,35 @@ class DatabaseManager:
             print(f"Error adding scheme: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def update_scheme(self, scheme_id, name, valid_from, valid_to, items_data):
+        """Update scheme."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
                 "UPDATE schemes SET name=%s, valid_from=%s, valid_to=%s WHERE id=%s",
-                (name, valid_from, valid_to, scheme_id)
+                (name, valid_from, valid_to, scheme_id),
             )
-            cur.execute("DELETE FROM scheme_products WHERE scheme_id = %s", (scheme_id,))
+            cur.execute(
+                "DELETE FROM scheme_products WHERE scheme_id = %s", (scheme_id,)
+            )
             for item in items_data:
                 cur.execute(
-                    """INSERT INTO scheme_products 
-                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value) 
+                """INSERT INTO scheme_products
+                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (scheme_id, item['pid'], item['min_qty'], item['max_qty'], item['target_uom'], 
-                     item['benefit_type'], item['benefit_value'])
+                    (
+                        scheme_id,
+                        item["pid"],
+                        item["min_qty"],
+                        item["max_qty"],
+                        item["target_uom"],
+                        item["benefit_type"],
+                        item["benefit_value"],
+                    ),
                 )
             conn.commit()
             return True
@@ -928,47 +1330,61 @@ class DatabaseManager:
             print(f"Error updating scheme: {e}")
             return False
         finally:
-            cur.close(); conn.close()
+            cur.close()
+            conn.close()
+
     def get_scheme_rules(self, scheme_id):
+        """Get scheme rules."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+        """
             SELECT p.id, p.name, p.barcode, sp.min_qty, sp.max_qty, sp.target_uom, sp.benefit_type, sp.benefit_value
             FROM scheme_products sp
             JOIN products p ON sp.product_id = p.id
             WHERE sp.scheme_id = %s
-        """, (scheme_id,))
+            """,
+            (scheme_id,),
+        )
         rules = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return rules
+
     def get_schemes(self):
+        """Get schemes."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT s.id, s.name, s.valid_from, s.valid_to,
-                   STRING_AGG(p.name || ' (' || sp.min_qty::float || '-' || COALESCE(sp.max_qty::float::text, '∞') || ' ' || COALESCE(sp.target_uom, 'All') || ')', ', ') as details
-            FROM schemes s 
+                   STRING_AGG(p.name || ' (' || sp.min_qty::float || '-' || 
+                   COALESCE(sp.max_qty::float::text, '∞') || ' ' || 
+                   COALESCE(sp.target_uom, 'All') || ')', ', ') as details
+            FROM schemes s
             LEFT JOIN scheme_products sp ON s.id = sp.scheme_id
             LEFT JOIN products p ON sp.product_id = p.id
             GROUP BY s.id
             ORDER BY s.id
-        """)
+            """)
         schemes = cur.fetchall()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return schemes
+
     def get_active_scheme_for_product(self, product_id, qty, uom=None):
+        """Get active scheme for product."""
         conn = self.get_connection()
         cur = conn.cursor()
         query = """
             SELECT s.name, sp.benefit_value, sp.benefit_type, sp.target_uom
             FROM schemes s
             JOIN scheme_products sp ON s.id = sp.scheme_id
-            WHERE sp.product_id = %s 
-              AND s.is_active = TRUE 
+            WHERE sp.product_id = %s
+              AND s.is_active = TRUE
               AND %s >= sp.min_qty
               AND (%s <= sp.max_qty OR sp.max_qty IS NULL)
               AND CURRENT_DATE BETWEEN s.valid_from AND COALESCE(s.valid_to, '9999-12-31')
-        """
+              """
         params = [product_id, qty, qty]
         if uom:
             query += " AND (sp.target_uom IS NULL OR sp.target_uom = %s) "
@@ -978,18 +1394,26 @@ class DatabaseManager:
         query += " ORDER BY sp.min_qty DESC, sp.benefit_value DESC LIMIT 1"
         cur.execute(query, tuple(params))
         scheme = cur.fetchone()
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return scheme
+
     def delete_scheme(self, scheme_id):
+        """Delete scheme."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute("DELETE FROM schemes WHERE id = %s", (scheme_id,))
             conn.commit()
             return True
-        except: return False
-        finally: cur.close(); conn.close()
+        except Exception:
+            return False
+        finally:
+            cur.close()
+            conn.close()
+
     def get_sales_history(self, date=None, query=None):
+        """Get sales history."""
         conn = self.get_connection()
         cur = conn.cursor()
         sql_query = """
@@ -997,13 +1421,15 @@ class DatabaseManager:
             FROM sales s
             LEFT JOIN customers c ON s.customer_id = c.id
             WHERE 1=1
-        """
+            """
         params = []
         if date:
             sql_query += " AND DATE(s.timestamp) = %s"
             params.append(date)
         if query:
-            sql_query += " AND (c.name ILIKE %s OR c.mobile ILIKE %s OR s.id::text ILIKE %s)"
+            sql_query += (
+                " AND (c.name ILIKE %s OR c.mobile ILIKE %s OR s.id::text ILIKE %s)"
+            )
             params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
         sql_query += " ORDER BY s.timestamp DESC"
         cur.execute(sql_query, tuple(params))
@@ -1011,38 +1437,74 @@ class DatabaseManager:
         cur.close()
         conn.close()
         return sales
+
     def get_sale_items(self, sale_id):
+        """
+        Retrieve all items associated with a specific sale ID.
+        """
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT p.name, si.quantity, si.price_at_sale, si.uom, si.product_id, p.barcode, si.mrp
             FROM sale_items si
             JOIN products p ON si.product_id = p.id
             WHERE si.sale_id = %s
-        """, (sale_id,))
+            """,
+            (sale_id,),
+        )
         items = cur.fetchall()
         cur.close()
         conn.close()
-        return [{'name': i[0], 'quantity': float(i[1]), 'price': float(i[2]), 'uom': i[3], 'id': i[4], 'barcode': i[5], 'mrp': float(i[6]) if i[6] else 0.0} for i in items]
-    def process_sale(self, items, total_amount, payment_method="Cash", customer_id=None, timestamp=None):
+        return [
+            {
+                "name": i[0],
+                "quantity": float(i[1]),
+                "price": float(i[2]),
+                "uom": i[3],
+                "id": i[4],
+                "barcode": i[5],
+                "mrp": float(i[6]) if i[6] else 0.0,
+            }
+            for i in items
+        ]
+
+    def process_sale(
+        self,
+        items,
+        total_amount,
+        payment_method="Cash",
+        customer_id=None,
+        timestamp=None,
+    ):
+        """
+        Record a new sale transaction and its individual items in the database.
+        """
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             if timestamp:
                 cur.execute(
                     "INSERT INTO sales (total_amount, payment_method, customer_id, timestamp) VALUES (%s, %s, %s, %s) RETURNING id",
-                    (total_amount, payment_method, customer_id, timestamp)
+                    (total_amount, payment_method, customer_id, timestamp),
                 )
             else:
                 cur.execute(
                     "INSERT INTO sales (total_amount, payment_method, customer_id) VALUES (%s, %s, %s) RETURNING id",
-                    (total_amount, payment_method, customer_id)
+                    (total_amount, payment_method, customer_id),
                 )
             sale_id = cur.fetchone()[0]
             for item in items:
                 cur.execute(
                     "INSERT INTO sale_items (sale_id, product_id, quantity, price_at_sale, uom, mrp) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (sale_id, item['id'], item['quantity'], item['price'], item['uom'], item.get('mrp'))
+                    (
+                        sale_id,
+                        item["id"],
+                        item["quantity"],
+                        item["price"],
+                        item["uom"],
+                        item.get("mrp"),
+                    ),
                 )
             conn.commit()
             return sale_id
@@ -1053,22 +1515,69 @@ class DatabaseManager:
         finally:
             cur.close()
             conn.close()
-    def update_sale(self, sale_id, items, total_amount, payment_method="Cash", customer_id=None):
+
+    def update_sale(
+        self, sale_id, items, total_amount, payment_method="Cash", customer_id=None
+    ):
+        """
+        Update an existing sale transaction by replacing its items and modifying header.
+        """
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute("DELETE FROM sale_items WHERE sale_id = %s", (sale_id,))
-            cur.execute("UPDATE sales SET total_amount = %s, payment_method = %s, customer_id = %s WHERE id = %s", (total_amount, payment_method, customer_id, sale_id))
+            cur.execute(
+                "UPDATE sales SET total_amount = %s, payment_method = %s, customer_id = %s WHERE id = %s",
+                (total_amount, payment_method, customer_id, sale_id),
+            )
             for item in items:
                 cur.execute(
                     "INSERT INTO sale_items (sale_id, product_id, quantity, price_at_sale, uom, mrp) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (sale_id, item['id'], item['quantity'], item['price'], item['uom'], item.get('mrp'))
+                    (
+                        sale_id,
+                        item["id"],
+                        item["quantity"],
+                        item["price"],
+                        item["uom"],
+                        item.get("mrp"),
+                    ),
                 )
             conn.commit()
             return True
         except Exception as e:
             conn.rollback()
             print(f"Error updating sale: {e}")
+            return False
+        finally:
+            cur.close()
+            conn.close()
+
+    def get_setting(self, key, default=None):
+        """
+        Retrieve a configuration setting value by its key.
+        """
+        conn = self.get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+        res = cur.fetchone()
+        cur.close()
+        conn.close()
+        return res[0] if res else default
+
+    def set_setting(self, key, value):
+        """
+        Save or update a configuration setting in the database.
+        """
+        conn = self.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (key, value),
+            )
+            conn.commit()
+            return True
+        except Exception:
             return False
         finally:
             cur.close()

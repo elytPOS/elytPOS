@@ -2,108 +2,11 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QFormLayout, QCombo
                                QPushButton, QMessageBox, QTabWidget, QWidget, QLineEdit, 
                                QTextEdit, QCheckBox, QHBoxLayout)
 from PySide6.QtCore import Qt
-MODERN_STYLE = """
-    QWidget {
-        background-color: #1e1e2e;
-        color: #ffffff;
-    }
-    QDialog {
-        background-color: #1e1e2e;
-        color: #ffffff;
-    }
-    QLabel {
-        color: #ffffff;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-    }
-    QComboBox, QLineEdit, QTextEdit {
-        background-color: #313244;
-        border: 1px solid #45475a;
-        padding: 6px;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-        color: #ffffff;
-        selection-background-color: #89b4fa;
-        selection-color: #1e1e2e;
-        border-radius: 4px;
-    }
-    QComboBox:focus, QLineEdit:focus, QTextEdit:focus {
-        background-color: #45475a;
-        border: 1px solid #89b4fa;
-    }
-    QCheckBox {
-        color: #ffffff;
-        font-family: 'FiraCode Nerd Font', monospace;
-        font-size: 11pt;
-        spacing: 5px;
-    }
-    QCheckBox::indicator {
-        width: 18px;
-        height: 18px;
-        border-radius: 4px;
-        border: 1px solid #45475a;
-        background-color: #313244;
-    }
-    QCheckBox::indicator:checked {
-        background-color: #89b4fa;
-        border: 1px solid #89b4fa;
-        image: none; /* Add a checkmark icon if available, or rely on color */
-    }
-    /* Add a pseudo-element checkmark for simplicity without icon assets */
-    QCheckBox::indicator:checked:after {
-        content: '✔';
-        color: #1e1e2e;
-        position: absolute;
-        top: 0px;
-        left: 2px;
-        font-weight: bold;
-    }
-    QTabWidget::pane {
-        border: 1px solid #45475a;
-        border-radius: 4px;
-        background-color: #1e1e2e;
-    }
-    QTabBar::tab {
-        background-color: #313244;
-        color: #ffffff;
-        padding: 8px 12px;
-        margin-right: 2px;
-        border-top-left-radius: 4px;
-        border-top-right-radius: 4px;
-    }
-    QTabBar::tab:selected {
-        background-color: #89b4fa;
-        color: #1e1e2e;
-        font-weight: bold;
-    }
-    QPushButton {
-        background-color: #313244;
-        border: 1px solid #45475a;
-        color: #ffffff;
-        padding: 8px 15px;
-        font-weight: bold;
-        font-family: 'FiraCode Nerd Font', monospace;
-        min-width: 80px;
-        border-radius: 4px;
-    }
-    QPushButton:hover {
-        background-color: #45475a;
-        border: 1px solid #585b70;
-    }
-    QPushButton:pressed {
-        background-color: #585b70;
-    }
-    QPushButton#btnSave {
-        background-color: #89b4fa;
-        color: #1e1e2e;
-    } 
-    QPushButton#btnSave:hover { background-color: #b4befe; }
-"""
+from styles import MODERN_STYLE
 class PrinterConfigDialog(QDialog):
     def __init__(self, printer_manager, parent=None, hide_cancel=False):
         super().__init__(parent)
         self.setWindowTitle("Printer Configuration")
-        self.setStyleSheet(MODERN_STYLE)
         self.hide_cancel = hide_cancel
         if hide_cancel:
             self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.CustomizeWindowHint)
@@ -111,7 +14,7 @@ class PrinterConfigDialog(QDialog):
         self.config = self.printer_manager.load_config()
         layout = QVBoxLayout(self)
         title = QLabel("Printer & Receipt Setup")
-        title.setStyleSheet("font-size: 18pt; font-weight: bold; color: #89b4fa; margin-bottom: 10px;")
+        title.setObjectName("title")
         layout.addWidget(title, 0, Qt.AlignCenter)
         self.tabs = QTabWidget()
         self.setup_printer_tab()

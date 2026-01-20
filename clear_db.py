@@ -1,10 +1,6 @@
-import sys
 import os
+import sys
 import psycopg2
-
-# Add current directory to path so we can import database.py
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 from database import DatabaseManager
 from PySide6.QtWidgets import QApplication, QDialog
 from main import ConfigDialog

@@ -21,8 +21,6 @@ def main():
 
     print("Checking for migrations...")
     try:
-        # Initializing DatabaseManager automatically runs init_db() 
-        # which applies all migrations defined in migrations list.
         db = DatabaseManager()
         print("Database migration check completed successfully.")
     except Exception as e:

@@ -1,5 +1,10 @@
+"""
+Receipt printing module for elytPOS.
+"""
+
 try:
     import cups
+
     CUPS_AVAILABLE = True
 except ImportError:
     CUPS_AVAILABLE = False
@@ -10,6 +15,7 @@ from datetime import datetime
 from PySide6.QtGui import QTextDocument, QFont, QPageSize, QPageLayout
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtCore import QSizeF, QMarginsF
+
 DEFAULT_CONFIG = {
     "printer_name": None,
     "paper_width": "76mm",
@@ -19,9 +25,15 @@ DEFAULT_CONFIG = {
     "footer_text": "Thank you for your visit!<br/>Items once sold cannot be returned.",
     "show_savings": True,
     "show_mrp": True,
-    "font_size": "Medium"
+    "font_size": "Medium",
 }
+
+
 class ReceiptPrinter:
+    """
+    Handles connection to thermal printers and receipt generation.
+    """
+
     def __init__(self):
         self.conn = None
         self.printers = {}
@@ -29,23 +41,29 @@ class ReceiptPrinter:
         self.config = self.load_config()
         if CUPS_AVAILABLE:
             self.refresh_printers()
+
     def get_config_path(self):
-        if getattr(sys, 'frozen', False):
+        """Get path to printer configuration file."""
+        if getattr(sys, "frozen", False):
             application_path = os.path.dirname(sys.executable)
         else:
             application_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(application_path, 'printer_config.json')
+        return os.path.join(application_path, "printer_config.json")
+
     def get_old_config_path(self):
-        if getattr(sys, 'frozen', False):
+        """Get path to old printer configuration file for migration."""
+        if getattr(sys, "frozen", False):
             application_path = os.path.dirname(sys.executable)
         else:
             application_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(application_path, 'printer.config')
+        return os.path.join(application_path, "printer.config")
+
     def load_config(self):
+        """Load printer configuration from JSON."""
         config = DEFAULT_CONFIG.copy()
         if os.path.exists(self.config_path):
             try:
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, "r") as f:
                     saved_config = json.load(f)
                     config.update(saved_config)
             except Exception as e:
@@ -54,7 +72,7 @@ class ReceiptPrinter:
             old_path = self.get_old_config_path()
             if os.path.exists(old_path):
                 try:
-                    with open(old_path, 'r') as f:
+                    with open(old_path, "r") as f:
                         printer_name = f.read().strip()
                         if printer_name:
                             config["printer_name"] = printer_name
@@ -62,21 +80,29 @@ class ReceiptPrinter:
                 except Exception as e:
                     print(f"Error migrating old config: {e}")
         return config
+
     def save_config(self, new_config):
+        """Save printer configuration to JSON."""
         try:
             self.config.update(new_config)
-            with open(self.config_path, 'w') as f:
+            with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=4)
             return True
         except Exception as e:
             print(f"Error saving printer config: {e}")
             return False
+
     def get_configured_printer(self):
+        """Get the name of the currently configured printer."""
         return self.config.get("printer_name")
+
     def save_printer_config(self, printer_name):
+        """Save specific printer name to config."""
         self.config["printer_name"] = printer_name
         return self.save_config(self.config)
+
     def refresh_printers(self):
+        """Refresh list of available CUPS printers."""
         if not CUPS_AVAILABLE:
             print("CUPS not available on this system.")
             return
@@ -86,20 +112,28 @@ class ReceiptPrinter:
         except Exception as e:
             print(f"CUPS Connection Error: {e}")
             self.printers = {}
+
     def get_available_printers(self):
+        """Get list of available printer names."""
         if not CUPS_AVAILABLE:
             return []
         self.refresh_printers()
         return list(self.printers.keys())
-    def print_receipt(self, items, total, sale_id, printer_name=None, customer_info=None):
+
+    def print_receipt(
+        self, items, total, sale_id, printer_name=None, customer_info=None
+    ):
+        """Generate PDF and send to the selected thermal printer."""
         if not self.printers:
             self.refresh_printers()
         if not self.printers:
             print("No printer found!")
             return False
-        target_printer = printer_name if printer_name else self.config.get("printer_name")
+        target_printer = (
+            printer_name if printer_name else self.config.get("printer_name")
+        )
         if not target_printer and self.printers:
-             target_printer = list(self.printers.keys())[0]
+            target_printer = list(self.printers.keys())[0]
         if not target_printer or target_printer not in self.printers:
             print(f"Printer {target_printer} not found!")
             return False
@@ -117,21 +151,36 @@ class ReceiptPrinter:
         width_str = self.config.get("paper_width", "76mm")
         if width_str == "58mm":
             page_width_mm = 58.0
-            doc_width = 160 
+            doc_width = 160
         elif width_str == "80mm":
             page_width_mm = 80.0
             doc_width = 220
-        else: 
+        else:
             page_width_mm = 76.2
             doc_width = 210
         page_size = QPageSize(QSizeF(page_width_mm, 300), QPageSize.Millimeter)
-        layout = QPageLayout(page_size, QPageLayout.Portrait, QMarginsF(1, 1, 1, 1), QPageLayout.Millimeter)
+        layout = QPageLayout(
+            page_size,
+            QPageLayout.Portrait,
+            QMarginsF(1, 1, 1, 1),
+            QPageLayout.Millimeter,
+        )
         printer.setPageLayout(layout)
-        doc.setTextWidth(doc_width) 
+        doc.setTextWidth(doc_width)
         doc.setHtml(html_content)
         doc.print_(printer)
         try:
-            self.conn.printFile(target_printer, temp_pdf, f"POS Receipt {sale_id}", {"page-left": "0", "page-right": "0", "page-top": "0", "page-bottom": "0"})
+            self.conn.printFile(
+                target_printer,
+                temp_pdf,
+                f"POS Receipt {sale_id}",
+                {
+                    "page-left": "0",
+                    "page-right": "0",
+                    "page-top": "0",
+                    "page-bottom": "0",
+                },
+            )
             return True
         except Exception as e:
             print(f"Printing error: {e}")
@@ -139,16 +188,22 @@ class ReceiptPrinter:
         finally:
             if os.path.exists(temp_pdf):
                 os.remove(temp_pdf)
+
     def _fmt(self, val):
+        """Format number to remove redundant decimals."""
         if float(val) == int(float(val)):
             return str(int(float(val)))
         return f"{float(val):.2f}"
+
     def generate_receipt_html(self, items, total, sale_id, customer_info=None):
+        """Generate thermal-optimized HTML for the receipt."""
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
         header_text = self.config.get("header_text", "ELYT POS")
         shop_name = self.config.get("shop_name", "KIRANA STORE")
         tax_id = self.config.get("tax_id", "")
-        footer_text = self.config.get("footer_text", "Thank you!").replace("\n", "<br/>")
+        footer_text = self.config.get("footer_text", "Thank you!").replace(
+            "\n", "<br/>"
+        )
         show_mrp = self.config.get("show_mrp", True)
         show_savings = self.config.get("show_savings", True)
         size_map = {"Small": "6pt", "Medium": "7pt", "Large": "8pt"}
@@ -156,24 +211,27 @@ class ReceiptPrinter:
         rows = ""
         total_mrp = 0.0
         for item in items:
-            uom = item.get('uom', '')
-            calc_rate = item['price']
-            calc_mrp = item.get('mrp', 0)
-            if uom and uom.lower() in ('g', 'gram', 'grams'):
+            uom = item.get("uom", "")
+            calc_rate = item["price"]
+            calc_mrp = item.get("mrp", 0)
+            if uom and uom.lower() in ("g", "gram", "grams"):
                 calc_rate /= 1000.0
-                if calc_mrp: calc_mrp /= 1000.0
-            subtotal = item['quantity'] * calc_rate
-            total_mrp += calc_mrp * item['quantity'] if calc_mrp else subtotal
+                if calc_mrp:
+                    calc_mrp /= 1000.0
+            subtotal = item["quantity"] * calc_rate
+            total_mrp += calc_mrp * item["quantity"] if calc_mrp else subtotal
             mrp_display = ""
-            if show_mrp and item.get('mrp') and float(item.get('mrp')) > 0:
-                mrp_display = f'<br/><span class="mrp-tag">MRP: {self._fmt(item["mrp"])}</span>'
+            if show_mrp and item.get("mrp") and float(item.get("mrp")) > 0:
+                mrp_display = (
+                    f'<br/><span class="mrp-tag">MRP: {self._fmt(item["mrp"])}</span>'
+                )
             rows += f"""
             <tr>
-                <td colspan="2" class="col-name">{item['name']}</td>
+                <td colspan="2" class="col-name">{item["name"]}</td>
             </tr>
             <tr>
                 <td class="col-details">
-                    {self._fmt(item['quantity'])} {uom} x {self._fmt(item['price'])}
+                    {self._fmt(item["quantity"])} {uom} x {self._fmt(item["price"])}
                     {mrp_display}
                 </td>
                 <td class="col-amt" align="right">{self._fmt(subtotal)}</td>
@@ -187,15 +245,17 @@ class ReceiptPrinter:
             cust_html = f"""
             <div class="cust-section">
                 <b>Bill To:</b><br/>
-                {customer_info.get('name', 'N/A')}<br/>
-                {customer_info.get('mobile', '')}<br/>
-                {customer_info.get('address', '')}
+                {customer_info.get("name", "N/A")}<br/>
+                {customer_info.get("mobile", "")}<br/>
+                {customer_info.get("address", "")}
             </div>
             """
         savings = total_mrp - total
         savings_html = ""
         if show_savings and savings > 0:
-            savings_html = f"<div class='savings'>Total Savings: ₹ {self._fmt(savings)}</div>"
+            savings_html = (
+                f"<div class='savings'>Total Savings: ₹ {self._fmt(savings)}</div>"
+            )
         tax_html = f'<div class="tax-id">GST: {tax_id}</div>' if tax_id else ""
         html = f"""
         <html>

@@ -1,4 +1,3 @@
-# -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
 
@@ -7,10 +6,9 @@ base_path = os.getcwd()
 
 # Define datas list
 added_datas = [
-    (os.path.join(base_path, 'splash.png'), '.'), (os.path.join(base_path, 'logo.svg'), '.')
+    (os.path.join(base_path, 'svg'), 'svg')
 ]
 
-# Only bundle XKB data on Linux
 if sys.platform.startswith('linux'):
     added_datas.append(('/usr/share/X11/xkb', 'xkb_data'))
 

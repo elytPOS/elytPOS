@@ -1,1 +1,1 @@
-include splash.png
+recursive-include svg *
