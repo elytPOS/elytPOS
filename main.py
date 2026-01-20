@@ -2299,6 +2299,8 @@ class ExcelTable(QTableWidget):
                 super().keyPressEvent(event)
             return
         if event.key() == Qt.Key_Right:
+            if col == 0 and not self.is_row_valid(row):
+                return
             if col == self.columnCount() - 1:
                 if not self.is_row_valid(row):
                     return
@@ -2333,6 +2335,8 @@ class ExcelTable(QTableWidget):
             if col in self.nav_order:
                 idx = self.nav_order.index(col)
                 if idx < len(self.nav_order) - 1:
+                    if col == 0 and not self.is_row_valid(row):
+                        return
                     self.setCurrentCell(row, self.nav_order[idx + 1])
                 else:
                     if not self.is_row_valid(row):
