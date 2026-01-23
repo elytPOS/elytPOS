@@ -43,7 +43,7 @@ from printer import ReceiptPrinter
 from calculator_gui import CalculatorDialog
 from help_system import HelpDialog
 import styles
-from styles import MODERN_STYLE, get_style, get_theme_colors, get_app_path
+from styles import get_style, get_theme_colors, get_app_path
 from printer_config_dialog import PrinterConfigDialog
 
 
@@ -2196,11 +2196,18 @@ class SalesHistoryDialog(QDialog):
         """
         items = self.db.get_sale_items(sid)
         if items:
-            lang_dlg = LanguageSelectionDialog(self.db, self)
-            if lang_dlg.exec() == QDialog.Accepted:
-                print_items = self.db.get_translated_items(
-                    items, lang_dlg.selected_lang_id
-                )
+            langs = self.db.get_languages()
+            selected_lang_id = None
+            should_print = True
+            if langs:
+                lang_dlg = LanguageSelectionDialog(self.db, self)
+                if lang_dlg.exec() == QDialog.Accepted:
+                    selected_lang_id = lang_dlg.selected_lang_id
+                else:
+                    should_print = False
+
+            if should_print:
+                print_items = self.db.get_translated_items(items, selected_lang_id)
                 sales = self.db.get_sales_history(query=str(sid))
                 sale_header = next((s for s in sales if str(s[0]) == str(sid)), None)
                 cust_info = None
@@ -2371,10 +2378,11 @@ class FuzzySearchLineEdit(QLineEdit):
         self.popup.setFocusPolicy(Qt.NoFocus)
         self.popup.setAttribute(Qt.WA_ShowWithoutActivating)
 
-        c = get_theme_colors(QApplication.instance().property("theme_name") or "mocha")
+        current_theme = QApplication.instance().property("theme_name") or "mocha"
+        c = get_theme_colors(current_theme)
 
         self.popup.setStyleSheet(
-            MODERN_STYLE
+            get_style(current_theme)
             + f"""
             QListWidget {{
                 background-color: {c["bg"]};
@@ -2522,11 +2530,19 @@ class MainWindow(QMainWindow):
         """
         self.theme_name = theme_name
 
-        styles.MODERN_STYLE = get_style(theme_name)
+        style = get_style(theme_name)
         app = QApplication.instance()
         app.setProperty("theme_name", theme_name)
         app.setWindowIcon(QIcon(resource_path(f"svg/logo_{theme_name}.svg")))
-        app.setStyleSheet(styles.MODERN_STYLE)
+        app.setStyleSheet(style)
+
+        # Apply style to all open top-level widgets (like PrinterConfigDialog)
+        for widget in app.topLevelWidgets():
+            widget.setStyleSheet(style)
+            # Recursively update children that might need explicit polish
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
         self.db.set_setting("theme", theme_name)
         self.update_total_label_style()
 
@@ -2916,7 +2932,9 @@ class MainWindow(QMainWindow):
                     self.grid.setItem(row, 5, QTableWidgetItem(f"{item['price']:.3f}"))
                     self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
                     self.grid.setItem(
-                        row, 7, QTableWidgetItem(f"{item['quantity'] * item['price']:.2f}")
+                        row,
+                        7,
+                        QTableWidgetItem(f"{item['quantity'] * item['price']:.2f}"),
                     )
                     self.grid.item(row, 1).setData(Qt.UserRole, prod)
             self.updating_cell = False
@@ -3272,10 +3290,19 @@ class MainWindow(QMainWindow):
                     )
                     == QMessageBox.Yes
                 ):
-                    lang_dlg = LanguageSelectionDialog(self.db, self)
-                    if lang_dlg.exec() == QDialog.Accepted:
+                    langs = self.db.get_languages()
+                    selected_lang_id = None
+                    should_print = True
+                    if langs:
+                        lang_dlg = LanguageSelectionDialog(self.db, self)
+                        if lang_dlg.exec() == QDialog.Accepted:
+                            selected_lang_id = lang_dlg.selected_lang_id
+                        else:
+                            should_print = False
+
+                    if should_print:
                         print_items = self.db.get_translated_items(
-                            items, lang_dlg.selected_lang_id
+                            items, selected_lang_id
                         )
                         cust_info = None
                         if self.selected_customer_data:
@@ -3284,7 +3311,6 @@ class MainWindow(QMainWindow):
                                 "mobile": self.selected_customer_data[2],
                                 "address": self.selected_customer_data[3],
                             }
-                        should_print = True
                         if not os.path.exists(self.printer.config_path):
                             if (
                                 PrinterConfigDialog(self.printer, self).exec()
@@ -3349,8 +3375,8 @@ def main():
     theme_name = db_manager.get_setting("theme", "mocha")
     app.setProperty("theme_name", theme_name)
     app.setWindowIcon(QIcon(resource_path(f"svg/logo_{theme_name}.svg")))
-    styles.MODERN_STYLE = get_style(theme_name)
-    app.setStyleSheet(styles.MODERN_STYLE)
+    style = get_style(theme_name)
+    app.setStyleSheet(style)
 
     if not db_manager.get_users():
         if SuperUserCreationDialog(db_manager).exec() != QDialog.Accepted:

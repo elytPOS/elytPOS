@@ -157,9 +157,18 @@ cython_debug/
 db.config
 backups/
 
+# Build artifacts
+main.dist/
+main.build/
+main.onefile-build/
+
 # Screenshots
-screenshot_*.png
 *.png
+screenshot_*.png
 !splash.png
+!screenshots/
+!screenshots/*.png
+
+# Config files
 *.config
 printer_config.json

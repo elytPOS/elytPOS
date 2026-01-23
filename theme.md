@@ -4,24 +4,28 @@ elytPOS supports a wide variety of professional color schemes to match your work
 
 ## 🌟 Available Themes
 
-| Theme | Description |
-| :--- | :--- |
-| **Mocha** | The default Catppuccin-inspired dark theme. Soft and balanced. |
-| **Latte** | A clean, high-contrast light theme for bright environments. |
-| **Nord** | Arctic-inspired, using cool blues and frosty tones. |
-| **Dracula** | The classic vibrant dark theme for high-energy productivity. |
-| **Amoled** | Pure black background for OLED displays and maximum power saving. |
-| **Emerald** | A deep forest-green theme for a calming retail experience. |
-| **Tokyo Night** | Modern dark theme inspired by the neon lights of Tokyo. |
-| **Gruvbox** | Retro-inspired "retro groove" with warm, earthy colors. |
-| **One Dark** | Based on the popular Atom editor palette. Clean and professional. |
-| **Rose Pine** | Sophisticated dark theme with ethereal, muted tones. |
-| **Solarized Dark** | Based on precision color theory for long-term eye comfort. |
-| **Everforest** | A pleasant and comfortable green-tinted dark theme. |
-| **Frappe** | A slightly lighter, more "milky" Catppuccin variant. |
-| **Monokai** | The legendary vibrant theme with high-contrast colors. |
-| **Synthwave 84** | Retro-futuristic theme with glowing neons and deep purples. |
-| **Night Owl** | Fine-tuned for nighttime coding and visual clarity. |
+| Theme | Description | Preview |
+| :--- | :--- | :--- |
+| **Mocha** | The default Catppuccin-inspired dark theme. Soft and balanced. | ![Mocha](screenshots/theme_mocha.png) |
+| **Latte** | A clean, high-contrast light theme for bright environments. | ![Latte](screenshots/theme_latte.png) |
+| **Nord** | Arctic-inspired, using cool blues and frosty tones. | ![Nord](screenshots/theme_nord.png) |
+| **Dracula** | The classic vibrant dark theme for high-energy productivity. | ![Dracula](screenshots/theme_dracula.png) |
+| **Amoled** | Pure black background for OLED displays and maximum power saving. | ![Amoled](screenshots/theme_amoled.png) |
+| **Emerald** | A deep forest-green theme for a calming retail experience. | ![Emerald](screenshots/theme_emerald.png) |
+| **Tokyo Night** | Modern dark theme inspired by the neon lights of Tokyo. | ![Tokyo Night](screenshots/theme_tokyo_night.png) |
+| **Gruvbox** | Retro-inspired "retro groove" with warm, earthy colors. | ![Gruvbox](screenshots/theme_gruvbox.png) |
+| **One Dark** | Based on the popular Atom editor palette. Clean and professional. | ![One Dark](screenshots/theme_one_dark.png) |
+| **Rose Pine** | Sophisticated dark theme with ethereal, muted tones. | ![Rose Pine](screenshots/theme_rose_pine.png) |
+| **Solarized Dark** | Based on precision color theory for long-term eye comfort. | ![Solarized Dark](screenshots/theme_solarized_dark.png) |
+| **Everforest** | A pleasant and comfortable green-tinted dark theme. | ![Everforest](screenshots/theme_everforest.png) |
+| **Frappe** | A slightly lighter, more "milky" Catppuccin variant. | ![Frappe](screenshots/theme_frappe.png) |
+| **Monokai** | The legendary vibrant theme with high-contrast colors. | ![Monokai](screenshots/theme_monokai.png) |
+| **Synthwave 84** | Retro-futuristic theme with glowing neons and deep purples. | ![Synthwave 84](screenshots/theme_synthwave84.png) |
+| **Night Owl** | Fine-tuned for nighttime coding and visual clarity. | ![Night Owl](screenshots/theme_night_owl.png) |
+| **Everforest Light** | A pleasant and comfortable green-tinted light theme. | ![Everforest Light](screenshots/theme_everforest_light.png) |
+| **Gruvbox Light** | Retro-inspired earthy tones on a light background. | ![Gruvbox Light](screenshots/theme_gruvbox_light.png) |
+| **Solarized Light** | Based on precision color theory for long-term eye comfort. | ![Solarized Light](screenshots/theme_solarized_light.png) |
+| **One Light** | Clean, minimalist light theme based on Atom. | ![One Light](screenshots/theme_one_light.png) |
 
 ## 🚀 How to Change Themes
 
