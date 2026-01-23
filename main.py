@@ -45,6 +45,7 @@ from help_system import HelpDialog
 import styles
 from styles import get_style, get_theme_colors, get_app_path
 from printer_config_dialog import PrinterConfigDialog
+from version import __version__
 
 
 def resource_path(relative_path):
@@ -2512,7 +2513,7 @@ class MainWindow(QMainWindow):
         Initialize the main POS application window and its core components.
         """
         super().__init__()
-        self.setWindowTitle(f"elytPOS - {user[2]}")
+        self.setWindowTitle(f"elytPOS v{__version__} - {user[2]}")
         self.showFullScreen()
         self.db = db_manager
         self.printer = ReceiptPrinter()
