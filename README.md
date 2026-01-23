@@ -27,7 +27,7 @@
 - 📦 **Smart Inventory:** Comprehensive product management with support for barcodes, multiple UOMs (Units of Measure), and fuzzy search.
 - 💰 **Dynamic Schemes:** Implementation of complex promotional rules, including percentage discounts, absolute rate changes, and bulk quantity offers.
 - 👥 **Customer Relationship:** Integrated customer database with instant lookup and multi-year transaction history.
-- 🖨️ **Advanced Printing:** Customizable thermal receipt generation with multi-language support and shop branding.
+- 🖨️ **Advanced Receipt Designer:** Fully customizable bill layouts with live paper-style preview, multiple saved layouts, and professional themes (Classic, Modern, Minimal).
 - 🔐 **Secure & Multi-User:** Role-based access control with encrypted password storage and automated database backups.
 - 🧮 **Built-in Calculator:** Seamless, non-modal GUI calculator with live evaluation and operation chaining.
 
@@ -39,7 +39,7 @@ For a detailed breakdown of permissions, see [USER_ROLES.md](user_roles.md).
 
 ## 🌍 Multi-Language Printing
 
-Provide a personalized experience by printing receipts in your customer's preferred language. Manage languages and item translations easily through the integrated Translation Engine.
+Provide a personalized experience by printing receipts in your customer's preferred language. The system automatically detects and simplifies the workflow, skipping extra steps if only one language is used. Manage languages and item translations easily through the integrated Translation Engine.
 
 Learn more in [MULTILANGUAGE.md](multilanguage.md).
 
@@ -49,12 +49,29 @@ Customize your workspace with over 10 professional color schemes, ranging from t
 
 Explore all options in [THEME.md](theme.md).
 
+## 🖼️ Screenshots
+
+### 🚀 Main Billing Dashboard
+![Main Dashboard](screenshots/dashboard.png)
+*Optimized for rapid data entry with real-time total calculation and fuzzy product search.*
+
+### 🖨️ Advanced Receipt Designer
+![Receipt Designer](screenshots/designer.png)
+*Fully customizable bill layouts with live paper-style preview and multiple saved layouts.*
+
+### 🎨 Bill Themes
+| Classic | Modern | Minimal |
+| :---: | :---: | :---: |
+| ![Classic](screenshots/theme_classic.png) | ![Modern](screenshots/theme_modern.png) | ![Minimal](screenshots/theme_minimal.png) |
+
+View the full gallery of interface designs in [SCREENSHOTS.md](screenshots.md).
+
 ## 🛠️ Tech Stack
 
 - **Frontend:** PySide6 (Qt for Python) with a custom modern dark theme.
 - **Backend:** Python 3.11+.
 - **Database:** PostgreSQL with `pg_trgm` extension for high-performance fuzzy matching.
-- **Printing:** CUPS (Linux/macOS) / Direct Printing (Windows) via `pycups` and Qt Print Support.
+- **Printing:** CUPS (Linux/macOS) / Direct Printing (Windows) with support for all sizes (Thermal 58mm/80mm, A4, A5).
 
 ## ⚙️ Installation & Setup
 
@@ -112,6 +129,10 @@ If you prefer to run the application using Python:
 ## 📜 License
 
 This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for the full text.
+
+## 🙏 Acknowledgments
+
+- **[Frappe Books](https://github.com/frappe/books):** Special thanks for the inspiration behind our advanced bill formats and receipt themes.
 
 ---
 

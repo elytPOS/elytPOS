@@ -235,68 +235,7 @@ class DatabaseManager:
                 value TEXT
             )
             """,
-        ]
-        migrations = [
-            "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(50) PRIMARY KEY, value TEXT);",
-            "INSERT INTO settings (key, value) VALUES ('theme', 'mocha') "
-            "ON CONFLICT (key) DO NOTHING;",
-            "CREATE TABLE IF NOT EXISTS purchases (id SERIAL PRIMARY KEY, "
-            "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, "
-            "supplier_name VARCHAR(100), invoice_no VARCHAR(50));",
-            "CREATE TABLE IF NOT EXISTS purchase_items (id SERIAL PRIMARY KEY, "
-            "purchase_id INTEGER REFERENCES purchases(id) ON DELETE CASCADE, "
-            "product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, "
-            "purchase_rate DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
-            "CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, "
-            "name VARCHAR(100) NOT NULL, mobile VARCHAR(15) UNIQUE, address TEXT, email VARCHAR(100));",
-            "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id);",
-            "CREATE TABLE IF NOT EXISTS held_sales (id SERIAL PRIMARY KEY, "
-            "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_amount DECIMAL(12, 3) NOT NULL, "
-            "user_id INTEGER REFERENCES users(id));",
-            "CREATE TABLE IF NOT EXISTS held_sale_items (id SERIAL PRIMARY KEY, "
-            "held_sale_id INTEGER REFERENCES held_sales(id) ON DELETE CASCADE, "
-            "product_id INTEGER REFERENCES products(id), quantity DECIMAL(12, 3) NOT NULL, "
-            "price_at_sale DECIMAL(12, 3) NOT NULL, uom VARCHAR(20), mrp DECIMAL(12, 3));",
-            "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, "
-            "username VARCHAR(50) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, "
-            "full_name VARCHAR(100), is_superuser BOOLEAN DEFAULT FALSE);",
-            "CREATE TABLE IF NOT EXISTS languages (id SERIAL PRIMARY KEY, "
-            "name VARCHAR(50) UNIQUE NOT NULL, code VARCHAR(10) UNIQUE);",
-            "CREATE TABLE IF NOT EXISTS product_translations (id SERIAL PRIMARY KEY, "
-            "product_id INTEGER REFERENCES products(id) ON DELETE CASCADE, "
-            "language_id INTEGER REFERENCES languages(id) ON DELETE CASCADE, "
-            "translated_name VARCHAR(255) NOT NULL, UNIQUE(product_id, language_id));",
-            "ALTER TABLE uoms ADD COLUMN IF NOT EXISTS alias VARCHAR(10) UNIQUE;",
-            "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
-            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS qty "
-            "DECIMAL(12, 3) NOT NULL DEFAULT 1.0;",
-            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS mrp "
-            "DECIMAL(12, 3) NOT NULL DEFAULT 0;",
-            "ALTER TABLE products ADD COLUMN IF NOT EXISTS mrp "
-            "DECIMAL(12, 3) NOT NULL DEFAULT 0;",
-            "ALTER TABLE products ADD COLUMN IF NOT EXISTS base_uom VARCHAR(20) DEFAULT 'pcs';",
-            "ALTER TABLE products ALTER COLUMN price TYPE DECIMAL(12, 3);",
-            "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20);",
-            "ALTER TABLE sale_items ALTER COLUMN quantity TYPE DECIMAL(12, 3);",
-            "ALTER TABLE sale_items ALTER COLUMN price_at_sale TYPE DECIMAL(12, 3);",
-            "ALTER TABLE sales ALTER COLUMN total_amount TYPE DECIMAL(12, 3);",
-            "ALTER TABLE schemes ADD COLUMN IF NOT EXISTS target_uom VARCHAR(20);",
-            "ALTER TABLE schemes RENAME COLUMN discount_value TO benefit_value;",
-            "ALTER TABLE schemes ADD COLUMN IF NOT EXISTS max_qty DECIMAL(12, 3);",
-            "ALTER TABLE schemes DROP COLUMN IF EXISTS product_id;",
-            "ALTER TABLE scheme_products ADD COLUMN IF NOT EXISTS min_qty DECIMAL(12, 3) DEFAULT 0;",
-            "ALTER TABLE scheme_products ADD COLUMN IF NOT EXISTS max_qty DECIMAL(12, 3);",
-            "ALTER TABLE scheme_products ADD COLUMN IF NOT EXISTS target_uom VARCHAR(20);",
-            "ALTER TABLE scheme_products ADD COLUMN IF NOT EXISTS benefit_type VARCHAR(20) DEFAULT 'percent';",
-            "ALTER TABLE scheme_products ADD COLUMN IF NOT EXISTS benefit_value DECIMAL(12, 3) DEFAULT 0;",
-            "ALTER TABLE scheme_products ALTER COLUMN min_qty TYPE DECIMAL(12, 3);",
-            "ALTER TABLE scheme_products ALTER COLUMN max_qty TYPE DECIMAL(12, 3);",
-            "ALTER TABLE scheme_products ALTER COLUMN benefit_value TYPE DECIMAL(12, 3);",
-            "ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS mrp DECIMAL(12, 3);",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'staff';",
-            "UPDATE users SET role = 'admin' WHERE is_superuser = TRUE AND role = 'staff';",
-            "ALTER TABLE users DROP COLUMN IF EXISTS is_superuser;",
+            "INSERT INTO settings (key, value) VALUES ('theme', 'mocha') ON CONFLICT (key) DO NOTHING;",
         ]
         conn = None
         try:
@@ -305,12 +244,6 @@ class DatabaseManager:
             for command in commands:
                 try:
                     cur.execute(command)
-                    conn.commit()
-                except psycopg2.Error:
-                    conn.rollback()
-            for migration in migrations:
-                try:
-                    cur.execute(migration)
                     conn.commit()
                 except psycopg2.Error:
                     conn.rollback()
@@ -427,7 +360,7 @@ class DatabaseManager:
         cur = conn.cursor()
         try:
             cur.execute(
-            """INSERT INTO product_translations (product_id, language_id, translated_name)
+                """INSERT INTO product_translations (product_id, language_id, translated_name)
                    VALUES (%s, %s, %s)
                    ON CONFLICT (product_id, language_id) DO UPDATE SET translated_name = EXCLUDED.translated_name""",
                 (product_id, language_id, translated_name),
@@ -446,7 +379,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-        """
+            """
             SELECT l.id, l.name, pt.translated_name
             FROM product_translations pt
             JOIN languages l ON pt.language_id = l.id
@@ -489,7 +422,7 @@ class DatabaseManager:
         cur = conn.cursor()
         try:
             cur.execute(
-            """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
+                """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
                    ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role""",
                 (username, pwd_hash, full_name, role),
             )
@@ -665,7 +598,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-        """
+            """
             SELECT p.timestamp, p.supplier_name, p.invoice_no, pi.quantity, pi.purchase_rate, pi.uom, pi.mrp
             FROM purchase_items pi
             JOIN purchases p ON pi.purchase_id = p.id
@@ -684,7 +617,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-        """
+            """
             SELECT DISTINCT p.id, p.timestamp, p.supplier_name, p.invoice_no, p.total_amount
             FROM purchases p
             JOIN purchase_items pi ON p.id = pi.purchase_id
@@ -1028,7 +961,7 @@ class DatabaseManager:
             conn.close()
             return res
         cur.execute(
-        """
+            """
             SELECT p.id, p.name, a.barcode, a.mrp, a.price, p.category, a.uom, a.factor, a.qty, p.price as base_price, p.mrp as base_mrp
             FROM product_aliases a
             JOIN products p ON a.product_id = p.id
@@ -1110,7 +1043,7 @@ class DatabaseManager:
             conn.close()
             return res
         cur.execute(
-        """
+            """
             SELECT id, name, barcode, mrp, price, category, base_uom,
                    GREATEST(similarity(name, %s), similarity(barcode, %s)) as sim
             FROM products
@@ -1121,7 +1054,7 @@ class DatabaseManager:
         )
         p_fuzzy = cur.fetchone()
         cur.execute(
-        """
+            """
             SELECT p.id, p.name, a.barcode, a.mrp, a.price, p.category, a.uom, a.factor, a.qty, p.price as base_price, p.mrp as base_mrp,
                    similarity(a.barcode, %s) as sim
             FROM product_aliases a
@@ -1195,6 +1128,7 @@ class DatabaseManager:
                 a_fuzzy[10],
             )
         return None
+
     def get_product_uom_data(self, product_id, uom):
         """Get product uom data."""
         conn = self.get_connection()
@@ -1274,7 +1208,7 @@ class DatabaseManager:
             scheme_id = cur.fetchone()[0]
             for item in items_data:
                 cur.execute(
-                """INSERT INTO scheme_products
+                    """INSERT INTO scheme_products
                        (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (
@@ -1310,7 +1244,7 @@ class DatabaseManager:
             )
             for item in items_data:
                 cur.execute(
-                """INSERT INTO scheme_products
+                    """INSERT INTO scheme_products
                        (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (
@@ -1338,7 +1272,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-        """
+            """
             SELECT p.id, p.name, p.barcode, sp.min_qty, sp.max_qty, sp.target_uom, sp.benefit_type, sp.benefit_value
             FROM scheme_products sp
             JOIN products p ON sp.product_id = p.id

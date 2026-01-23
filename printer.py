@@ -1,6 +1,4 @@
-"""
-Receipt printing module for elytPOS.
-"""
+"Receipt printing module for elytPOS."
 
 try:
     import cups
@@ -18,7 +16,13 @@ from PySide6.QtCore import QSizeF, QMarginsF
 
 DEFAULT_CONFIG = {
     "printer_name": None,
-    "paper_width": "76mm",
+    "paper_width_mm": 76.2,
+    "paper_height_mm": 300,
+    "margin_left": 1.0,
+    "margin_right": 1.0,
+    "margin_top": 1.0,
+    "margin_bottom": 1.0,
+    "font_family": "FiraCode Nerd Font",
     "header_text": "ELYT POS",
     "shop_name": "KIRANA STORE",
     "tax_id": "",
@@ -26,154 +30,185 @@ DEFAULT_CONFIG = {
     "show_savings": True,
     "show_mrp": True,
     "font_size": "Medium",
+    "label_bill_to": "Bill To:",
+    "label_gst": "GST:",
+    "label_date": "Date:",
+    "label_bill_no": "Bill:",
+    "label_item_col": "Item Description",
+    "label_amount_col": "Amount",
+    "label_net_payable": "NET PAYABLE:",
+    "label_total_savings": "Total Savings:",
+    "currency_symbol": "₹",
+    "item_col_width": 70,
+    "bill_theme": "Classic",
 }
 
 
 class ReceiptPrinter:
-    """
-    Handles connection to thermal printers and receipt generation.
-    """
-
     def __init__(self):
         self.conn = None
         self.printers = {}
         self.config_path = self.get_config_path()
+        self.full_config = {
+            "active_layout": "Default",
+            "layouts": {"Default": DEFAULT_CONFIG.copy()},
+        }
         self.config = self.load_config()
         if CUPS_AVAILABLE:
             self.refresh_printers()
 
     def get_config_path(self):
-        """Get path to printer configuration file."""
         if getattr(sys, "frozen", False):
             application_path = os.path.dirname(sys.executable)
         else:
             application_path = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(application_path, "printer_config.json")
 
-    def get_old_config_path(self):
-        """Get path to old printer configuration file for migration."""
-        if getattr(sys, "frozen", False):
-            application_path = os.path.dirname(sys.executable)
-        else:
-            application_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(application_path, "printer.config")
-
     def load_config(self):
-        """Load printer configuration from JSON."""
-        config = DEFAULT_CONFIG.copy()
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, "r") as f:
-                    saved_config = json.load(f)
-                    config.update(saved_config)
+                    saved_data = json.load(f)
+                if "layouts" in saved_data and "active_layout" in saved_data:
+                    self.full_config = saved_data
+                else:
+                    merged = DEFAULT_CONFIG.copy()
+                    merged.update(saved_data)
+                    self.full_config["layouts"]["Default"] = merged
+                    self.full_config["active_layout"] = "Default"
+                    self.save_full_config(self.full_config)
             except Exception as e:
                 print(f"Error loading printer config: {e}")
-        elif not config["printer_name"]:
-            old_path = self.get_old_config_path()
-            if os.path.exists(old_path):
-                try:
-                    with open(old_path, "r") as f:
-                        printer_name = f.read().strip()
-                        if printer_name:
-                            config["printer_name"] = printer_name
-                            self.save_config(config)
-                except Exception as e:
-                    print(f"Error migrating old config: {e}")
-        return config
+
+        self.config = self.get_active_config()
+        return self.config
+
+    def get_active_config(self):
+        active_name = self.full_config.get("active_layout", "Default")
+        return self.full_config["layouts"].get(active_name, DEFAULT_CONFIG.copy())
 
     def save_config(self, new_config):
-        """Save printer configuration to JSON."""
+        active_name = self.full_config.get("active_layout", "Default")
+        if active_name not in self.full_config["layouts"]:
+            self.full_config["layouts"][active_name] = {}
+        self.full_config["layouts"][active_name].update(new_config)
+        self.config = self.full_config["layouts"][active_name]
+        return self.save_full_config(self.full_config)
+
+    def save_full_config(self, full_data):
         try:
-            self.config.update(new_config)
             with open(self.config_path, "w") as f:
-                json.dump(self.config, f, indent=4)
+                json.dump(full_data, f, indent=4)
+            self.full_config = full_data
+            self.config = self.get_active_config()
             return True
         except Exception as e:
             print(f"Error saving printer config: {e}")
             return False
 
+    def get_layout_names(self):
+        return list(self.full_config["layouts"].keys())
+
+    def create_layout(self, name, base_layout_name=None):
+        if name in self.full_config["layouts"]:
+            return False
+        base = DEFAULT_CONFIG.copy()
+        if base_layout_name and base_layout_name in self.full_config["layouts"]:
+            base = self.full_config["layouts"][base_layout_name].copy()
+        self.full_config["layouts"][name] = base
+        return self.save_full_config(self.full_config)
+
+    def delete_layout(self, name):
+        if name == "Default" or name not in self.full_config["layouts"]:
+            return False
+        del self.full_config["layouts"][name]
+        if self.full_config["active_layout"] == name:
+            self.full_config["active_layout"] = "Default"
+        return self.save_full_config(self.full_config)
+
+    def set_active_layout(self, name):
+        if name not in self.full_config["layouts"]:
+            return False
+        self.full_config["active_layout"] = name
+        return self.save_full_config(self.full_config)
+
+    def set_full_config(self, full_data):
+        """Replace the entire internal config structure and save."""
+        return self.save_full_config(full_data)
+
     def get_configured_printer(self):
-        """Get the name of the currently configured printer."""
         return self.config.get("printer_name")
 
     def save_printer_config(self, printer_name):
-        """Save specific printer name to config."""
         self.config["printer_name"] = printer_name
         return self.save_config(self.config)
 
     def refresh_printers(self):
-        """Refresh list of available CUPS printers."""
         if not CUPS_AVAILABLE:
-            print("CUPS not available on this system.")
             return
         try:
             self.conn = cups.Connection()
             self.printers = self.conn.getPrinters()
-        except Exception as e:
-            print(f"CUPS Connection Error: {e}")
+        except Exception:
             self.printers = {}
 
     def get_available_printers(self):
-        """Get list of available printer names."""
-        if not CUPS_AVAILABLE:
-            return []
         self.refresh_printers()
         return list(self.printers.keys())
 
+    def _fmt(self, val):
+        if float(val) == int(float(val)):
+            return str(int(float(val)))
+        return f"{float(val):.2f}"
+
     def print_receipt(
-        self, items, total, sale_id, printer_name=None, customer_info=None
+        self,
+        items,
+        total,
+        sale_id,
+        printer_name=None,
+        customer_info=None,
     ):
-        """Generate PDF and send to the selected thermal printer."""
         if not self.printers:
             self.refresh_printers()
-        if not self.printers:
-            print("No printer found!")
+        target = printer_name or self.config.get("printer_name")
+        if not target and self.printers:
+            target = list(self.printers.keys())[0]
+        if not target or target not in self.printers:
             return False
-        target_printer = (
-            printer_name if printer_name else self.config.get("printer_name")
-        )
-        if not target_printer and self.printers:
-            target_printer = list(self.printers.keys())[0]
-        if not target_printer or target_printer not in self.printers:
-            print(f"Printer {target_printer} not found!")
-            return False
-        html_content = self.generate_receipt_html(items, total, sale_id, customer_info)
+        html = self.generate_receipt_html(items, total, sale_id, customer_info)
         temp_pdf = f"/tmp/receipt_{sale_id}.pdf"
         doc = QTextDocument()
-        font_size_map = {"Small": 8, "Medium": 9, "Large": 10}
-        base_size = font_size_map.get(self.config.get("font_size", "Medium"), 9)
-        font = QFont("FiraCode Nerd Font", base_size)
+        f_map = {"Small": 8, "Medium": 9, "Large": 10}
+        base_size = f_map.get(self.config.get("font_size", "Medium"), 9)
+        font = QFont(self.config.get("font_family", "FiraCode Nerd Font"), base_size)
         font.setBold(True)
         doc.setDefaultFont(font)
         printer = QPrinter(QPrinter.HighResolution)
         printer.setOutputFormat(QPrinter.PdfFormat)
         printer.setOutputFileName(temp_pdf)
-        width_str = self.config.get("paper_width", "76mm")
-        if width_str == "58mm":
-            page_width_mm = 58.0
-            doc_width = 160
-        elif width_str == "80mm":
-            page_width_mm = 80.0
-            doc_width = 220
-        else:
-            page_width_mm = 76.2
-            doc_width = 210
-        page_size = QPageSize(QSizeF(page_width_mm, 300), QPageSize.Millimeter)
-        layout = QPageLayout(
-            page_size,
-            QPageLayout.Portrait,
-            QMarginsF(1, 1, 1, 1),
-            QPageLayout.Millimeter,
+        w_mm = float(self.config.get("paper_width_mm", 76.2))
+        h_mm = float(self.config.get("paper_height_mm", 300))
+        doc.setTextWidth((w_mm / 25.4) * 72 * 2.8)
+        page_size = QPageSize(QSizeF(w_mm, h_mm), QPageSize.Millimeter)
+        margins = QMarginsF(
+            float(self.config.get("margin_left", 1)),
+            float(self.config.get("margin_top", 1)),
+            float(self.config.get("margin_right", 1)),
+            float(self.config.get("margin_bottom", 1)),
         )
-        printer.setPageLayout(layout)
-        doc.setTextWidth(doc_width)
-        doc.setHtml(html_content)
+        printer.setPageLayout(
+            QPageLayout(
+                page_size, QPageLayout.Portrait, margins, QPageLayout.Millimeter
+            )
+        )
+        doc.setHtml(html)
         doc.print_(printer)
         try:
             self.conn.printFile(
-                target_printer,
+                target,
                 temp_pdf,
-                f"POS Receipt {sale_id}",
+                f"Bill {sale_id}",
                 {
                     "page-left": "0",
                     "page-right": "0",
@@ -182,143 +217,231 @@ class ReceiptPrinter:
                 },
             )
             return True
-        except Exception as e:
-            print(f"Printing error: {e}")
+        except Exception:
             return False
         finally:
             if os.path.exists(temp_pdf):
                 os.remove(temp_pdf)
 
-    def _fmt(self, val):
-        """Format number to remove redundant decimals."""
-        if float(val) == int(float(val)):
-            return str(int(float(val)))
-        return f"{float(val):.2f}"
+    def generate_receipt_html(
+        self,
+        items,
+        total,
+        sale_id,
+        customer_info=None,
+        config=None,
+    ):
+        if config is None:
+            config = self.config
+        theme = config.get("bill_theme", "Classic")
+        if theme == "Modern":
+            return self._generate_modern_html(
+                items, total, sale_id, customer_info, config
+            )
+        if theme == "Minimal":
+            return self._generate_minimal_html(
+                items, total, sale_id, customer_info, config
+            )
+        return self._generate_classic_html(items, total, sale_id, customer_info, config)
 
-    def generate_receipt_html(self, items, total, sale_id, customer_info=None):
-        """Generate thermal-optimized HTML for the receipt."""
+    def _generate_classic_html(self, items, total, sale_id, customer_info, config):
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
-        header_text = self.config.get("header_text", "ELYT POS")
-        shop_name = self.config.get("shop_name", "KIRANA STORE")
-        tax_id = self.config.get("tax_id", "")
-        footer_text = self.config.get("footer_text", "Thank you!").replace(
-            "\n", "<br/>"
-        )
-        show_mrp = self.config.get("show_mrp", True)
-        show_savings = self.config.get("show_savings", True)
+        header_text = config.get("header_text", "ELYT POS")
+        shop_name = config.get("shop_name", "KIRANA STORE")
+        tax_id = config.get("tax_id", "")
+        footer_text = config.get("footer_text", "Thank you!").replace("\n", "<br/>")
+        show_mrp = config.get("show_mrp", True)
+        show_savings = config.get("show_savings", True)
+
+        lbl_bill_to = config.get("label_bill_to", "Bill To:")
+        lbl_gst = config.get("label_gst", "GST:")
+        lbl_date = config.get("label_date", "Date:")
+        lbl_bill_no = config.get("label_bill_no", "Bill:")
+        lbl_item_col = config.get("label_item_col", "Item Description")
+        lbl_amount_col = config.get("label_amount_col", "Amount")
+        lbl_net_payable = config.get("label_net_payable", "NET PAYABLE:")
+        lbl_total_savings = config.get("label_total_savings", "Total Savings:")
+        currency = config.get("currency_symbol", "₹")
+        item_col_width = config.get("item_col_width", 70)
+        amount_col_width = 100 - item_col_width
+
         size_map = {"Small": "6pt", "Medium": "7pt", "Large": "8pt"}
-        css_font_size = size_map.get(self.config.get("font_size", "Medium"), "7pt")
+        css_font_size = size_map.get(config.get("font_size", "Medium"), "7pt")
+        font_family = config.get("font_family", "FiraCode Nerd Font")
+        m_l = config.get("margin_left", 1)
+        m_r = config.get("margin_right", 1)
+        m_t = config.get("margin_top", 1)
+        m_b = config.get("margin_bottom", 1)
+
         rows = ""
         total_mrp = 0.0
         for item in items:
             uom = item.get("uom", "")
-            calc_rate = item["price"]
-            calc_mrp = item.get("mrp", 0)
-            if uom and uom.lower() in ("g", "gram", "grams"):
-                calc_rate /= 1000.0
-                if calc_mrp:
-                    calc_mrp /= 1000.0
-            subtotal = item["quantity"] * calc_rate
-            total_mrp += calc_mrp * item["quantity"] if calc_mrp else subtotal
+            subtotal = item["quantity"] * item["price"]
             mrp_display = ""
             if show_mrp and item.get("mrp") and float(item.get("mrp")) > 0:
-                mrp_display = (
-                    f'<br/><span class="mrp-tag">MRP: {self._fmt(item["mrp"])}</span>'
-                )
+                mrp_display = f'<br/><span style="font-size:0.8em;color:#555">MRP: {self._fmt(item["mrp"])}</span>'
             rows += f"""
+            <tr><td colspan="2" style="font-weight:bold">{item["name"]}</td></tr>
             <tr>
-                <td colspan="2" class="col-name">{item["name"]}</td>
+                <td style="padding-left:2mm;font-size:0.9em">{self._fmt(item["quantity"])} {uom} x {self._fmt(item["price"])} {mrp_display}</td>
+                <td align="right" style="font-weight:bold">{self._fmt(subtotal)}</td>
             </tr>
-            <tr>
-                <td class="col-details">
-                    {self._fmt(item["quantity"])} {uom} x {self._fmt(item["price"])}
-                    {mrp_display}
-                </td>
-                <td class="col-amt" align="right">{self._fmt(subtotal)}</td>
-            </tr>
-            <tr>
-                <td colspan="2" class="separator-line"></td>
-            </tr>
+            <tr><td colspan="2" style="border-bottom:0.1mm dashed #ccc;height:1px"></td></tr>
             """
         cust_html = ""
         if customer_info:
-            cust_html = f"""
-            <div class="cust-section">
-                <b>Bill To:</b><br/>
-                {customer_info.get("name", "N/A")}<br/>
-                {customer_info.get("mobile", "")}<br/>
-                {customer_info.get("address", "")}
-            </div>
-            """
-        savings = total_mrp - total
-        savings_html = ""
-        if show_savings and savings > 0:
-            savings_html = (
-                f"<div class='savings'>Total Savings: ₹ {self._fmt(savings)}</div>"
-            )
-        tax_html = f'<div class="tax-id">GST: {tax_id}</div>' if tax_id else ""
-        html = f"""
+            cust_html = f'<div style="margin:2mm 0;border-bottom:0.1mm solid #ccc;padding-bottom:2mm"><b>{lbl_bill_to}</b><br/>{customer_info.get("name")}<br/>{customer_info.get("mobile")}</div>'
+
+        tax_html = (
+            f'<div style="text-align:center;font-weight:bold;margin-bottom:2mm">{lbl_gst} {tax_id}</div>'
+            if tax_id
+            else ""
+        )
+
+        return f"""
         <html>
         <style>
             @page {{ margin: 0; }}
-            body {{
-                font-family: 'FiraCode Nerd Font', monospace;
-                width: 100%;
-                margin: 0;
-                padding: 2mm;
-                font-size: {css_font_size};
-                color: black;
-            }}
-            .header {{ text-align: center; font-weight: 900; font-size: 1.5em; margin-bottom: 1mm; }}
-            .shop-name {{ text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 1mm; }}
-            .tax-id {{ text-align: center; font-size: 1em; font-weight: bold; margin-bottom: 2mm; }}
-            .info-line {{ font-size: 0.9em; margin-bottom: 1mm; border-bottom: 0.1mm solid #ccc; padding-bottom: 1mm; }}
-            .cust-section {{ margin: 2mm 0; border-bottom: 0.1mm solid #ccc; padding-bottom: 2mm; font-size: 1em; }}
+            body {{ font-family: '{font_family}', monospace; padding: {m_t}mm {m_r}mm {m_b}mm {m_l}mm; font-size: {css_font_size}; color: black; }}
+            .header {{ text-align: center; font-weight: 900; font-size: 1.5em; }}
+            .shop {{ text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 1mm; }}
             table {{ width: 100%; border-collapse: collapse; }}
-            th {{ border-bottom: 0.2mm solid black; font-size: 1em; padding: 1mm 0; text-align: left; }}
+            th {{ border-bottom: 0.2mm solid black; padding: 1mm 0; text-align: left; }}
             td {{ padding: 0.5mm 0; vertical-align: top; }}
-            .col-name {{ font-weight: bold; font-size: 1em; }}
-            .col-details {{ font-size: 0.9em; color: #333; padding-left: 2mm; }}
-            .col-amt {{ font-weight: bold; font-size: 1em; }}
-            .mrp-tag {{ font-size: 0.8em; color: #555; }}
-            .separator-line {{ border-bottom: 0.1mm dashed #ccc; height: 1px; }}
-            .total-row {{ border-top: 0.3mm solid black; margin-top: 2mm; padding-top: 1mm; }}
-            .total-table td {{ font-size: 1.3em; font-weight: 900; }}
-            .savings {{ text-align: center; margin-top: 2mm; font-weight: bold; font-size: 1.1em; border: 0.2mm dashed black; padding: 1mm; }}
-            .footer {{ text-align: center; margin-top: 4mm; font-size: 0.9em; border-top: 0.1mm solid #ccc; padding-top: 2mm; }}
         </style>
         <body>
             <div class="header">{header_text}</div>
-            <div class="shop-name">{shop_name}</div>
+            <div class="shop">{shop_name}</div>
             {tax_html}
-            <div class="info-line">
-                Date: {now} | Bill: #{sale_id}
-            </div>
+            <div style="font-size:0.9em;margin-bottom:1mm;border-bottom:0.1mm solid #ccc">{lbl_date} {now} | {lbl_bill_no} #{sale_id}</div>
             {cust_html}
             <table>
-                <thead>
-                    <tr>
-                        <th width="70%">Item Description</th>
-                        <th width="30%" align="right">Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows}
-                </tbody>
+                <thead><tr><th width="{item_col_width}%">{lbl_item_col}</th><th width="{amount_col_width}%" align="right">{lbl_amount_col}</th></tr></thead>
+                <tbody>{rows}</tbody>
             </table>
-            <div class="total-row">
-                <table class="total-table" width="100%">
-                    <tr>
-                        <td align="left">NET PAYABLE:</td>
-                        <td align="right">₹ {self._fmt(total)}</td>
-                    </tr>
-                </table>
+            <div style="border-top:0.3mm solid black;margin-top:2mm;padding-top:1mm">
+                <table width="100%"><tr><td style="font-size:1.3em;font-weight:900">{lbl_net_payable}</td><td align="right" style="font-size:1.3em;font-weight:900">{currency} {self._fmt(total)}</td></tr></table>
             </div>
-            {savings_html}
-            <div class="footer">
-                {footer_text}
-            </div>
+            <div style="text-align:center;margin-top:4mm;font-size:0.9em;border-top:0.1mm solid #ccc;padding-top:2mm">{footer_text}</div>
         </body>
         </html>
         """
-        return html
+
+    def _generate_modern_html(self, items, total, sale_id, customer_info, config):
+        now = datetime.now().strftime("%d-%m-%Y %H:%M")
+        shop_name = config.get("shop_name", "KIRANA STORE")
+        tax_id = config.get("tax_id", "")
+        footer_text = config.get("footer_text", "Thank you!").replace("\n", "<br/>")
+        currency = config.get("currency_symbol", "₹")
+        font_family = config.get("font_family", "sans-serif")
+        size_map = {"Small": "6pt", "Medium": "7pt", "Large": "8pt"}
+        css_font_size = size_map.get(config.get("font_size", "Medium"), "7pt")
+        m_l = config.get("margin_left", 1)
+        m_r = config.get("margin_right", 1)
+        m_t = config.get("margin_top", 1)
+        m_b = config.get("margin_bottom", 1)
+
+        rows = "".join(
+            [
+                f'<tr style="border-bottom:0.1mm solid #eee"><td style="width:10%">{i + 1}</td><td style="width:50%;font-weight:600">{it["name"]}</td><td style="width:15%;text-align:center">{self._fmt(it["quantity"])}</td><td style="width:25%;text-align:right;font-weight:700">{self._fmt(it["quantity"] * it["price"])}</td></tr>'
+                for i, it in enumerate(items)
+            ]
+        )
+
+        cust_section = f'<div style="display:grid;grid-template-columns:25% 75%;font-size:0.9em;margin-bottom:2mm;padding:1mm;background:#f9f9f9"><b>Cust:</b><span>{customer_info.get("name") if customer_info else "N/A"}</span></div>'
+        tax_html = (
+            f'<div style="font-size:0.9em;font-weight:600;margin-top:1mm">{tax_id}</div>'
+            if tax_id
+            else ""
+        )
+
+        style_content = "@page { margin: 0; } "
+        style_content += (
+            "body { font-family: '%s', sans-serif; padding: %smm %smm %smm %smm; font-size: %s; color: #333; } "
+            % (font_family, m_t, m_r, m_b, m_l, css_font_size)
+        )
+        style_content += ".h { text-align: center; border-bottom: 2px solid #000; padding-bottom: 2mm; margin-bottom: 2mm; } "
+        style_content += (
+            ".s { font-size: 1.4em; font-weight: 800; text-transform: uppercase; } "
+        )
+        style_content += (
+            "table { width: 100%; border-collapse: collapse; margin-top: 2mm; } "
+        )
+        style_content += "th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1mm 0; font-size: 0.9em; text-transform: uppercase; } "
+
+        return f"""
+        <html>
+        <style>{style_content}</style>
+        <body>
+            <div class="h"><div class="s">{shop_name}</div>{tax_html}</div>
+            <div style="display:grid;grid-template-columns:25% 75%;font-size:0.9em;margin-bottom:2mm"><b>Bill:</b><span>#{sale_id}</span><b>Date:</b><span>{now}</span></div>
+            {cust_section}
+            <table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th align="right">Amt</th></tr></thead><tbody>{rows}</tbody></table>
+            <div style="margin-top:4mm;border-top:2px solid #000;padding-top:2mm;display:flex;justify-content:space-between;font-size:1.3em;font-weight:900">
+                <span>TOTAL</span><span>{currency} {self._fmt(total)}</span>
+            </div>
+            <div style="text-align:center;margin-top:6mm;font-style:italic;border-top:1px dashed #999;padding-top:2mm">{footer_text}</div>
+        </body>
+        </html>
+        """
+
+    def _generate_minimal_html(self, items, total, sale_id, customer_info, config):
+        now = datetime.now().strftime("%d-%m-%Y %H:%M")
+        shop_name = config.get("shop_name", "KIRANA STORE")
+        currency = config.get("currency_symbol", "₹")
+        font_family = config.get("font_family", "serif")
+        size_map = {"Small": "7pt", "Medium": "8pt", "Large": "9pt"}
+        css_font_size = size_map.get(config.get("font_size", "Medium"), "8pt")
+        m_l = config.get("margin_left", 1)
+        m_r = config.get("margin_right", 1)
+        m_t = config.get("margin_top", 1)
+        m_b = config.get("margin_bottom", 1)
+
+        rows = "".join(
+            [
+                f'<div style="margin-bottom:3mm"><div style="display:flex;justify-content:space-between;font-weight:600"><span>{it["name"]}</span><span>{currency} {self._fmt(it["quantity"] * it["price"])}</span></div><div style="font-size:0.85em;opacity:0.8">{self._fmt(it["quantity"])} x {self._fmt(it["price"])}</div></div>'
+                for it in items
+            ]
+        )
+
+        style_content = "@page { margin: 0; } "
+        style_content += (
+            "body { font-family: '%s', serif; padding: %smm %smm %smm %smm; font-size: %s; color: #000; line-height: 1.4; } "
+            % (font_family, m_t, m_r, m_b, m_l, css_font_size)
+        )
+        style_content += ".min-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 0.5mm solid #000; padding-bottom: 3mm; margin-bottom: 4mm; } "
+        style_content += (
+            ".min-shop { font-size: 1.5em; font-weight: 300; letter-spacing: 1px; } "
+        )
+        style_content += (
+            ".min-meta { text-align: right; font-size: 0.8em; opacity: 0.7; } "
+        )
+        style_content += ".min-item { margin-bottom: 3mm; } "
+        style_content += ".min-item-main { display: flex; justify-content: space-between; font-weight: 600; } "
+        style_content += ".min-details { font-size: 0.85em; opacity: 0.8; } "
+        style_content += ".min-summary { margin-top: 6mm; border-top: 0.2mm solid #ccc; padding-top: 3mm; } "
+        style_content += ".min-total-row { display: flex; justify-content: space-between; font-size: 1.4em; font-weight: 200; } "
+        style_content += ".min-footer { margin-top: 10mm; text-align: center; font-size: 0.8em; letter-spacing: 2px; text-transform: uppercase; opacity: 0.6; } "
+
+        return f"""
+<html>
+<style>{style_content}</style>
+<body>
+    <div class="min-header">
+        <div class="min-shop">{shop_name}</div>
+        <div class="min-meta">
+            INV #{sale_id}<br/>{now}
+        </div>
+    </div>
+    <div class="min-items-list">{rows}</div>
+    <div class="min-summary">
+        <div class="min-total-row">
+            <span>Total Amount</span>
+            <span>{currency} {self._fmt(total)}</span>
+        </div>
+    </div>
+    <div class="min-footer">~~~ {config.get("footer_text", "Thank You")} ~~~</div>
+</body>
+</html>
+"""

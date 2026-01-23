@@ -75,9 +75,7 @@ class CalculatorDialog(QDialog):
         input_layout.addWidget(clear_btn)
         layout.addLayout(input_layout)
 
-        help_label = QLabel(
-            "Press Enter to add to history. Result stays for chaining."
-        )
+        help_label = QLabel("Press Enter to add to history. Result stays for chaining.")
         help_label.setObjectName("copyright")
         layout.addWidget(help_label)
 

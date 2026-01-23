@@ -483,14 +483,28 @@ def get_style(theme_name="mocha"):
     QCheckBox::indicator:checked {{
         background-color: {t["accent"]};
         border: 1px solid {t["accent"]};
+        image: url(noop); /* Removes default check if any */
     }}
-    QCheckBox::indicator:checked:after {{
-        content: '✔';
+    QScrollArea {{
+        border: none;
+        background-color: {t["bg"]};
+    }}
+    QScrollArea#previewScroll {{
+        background-color: {t["table_bg"]};
+        border: 1px solid {t["border"]};
+    }}
+    QFrame[frameShape="4"], QFrame[frameShape="5"] {{ /* VLine and HLine */
+        color: {t["border"]};
+    }}
+    QListWidget {{
+        background-color: {t["input_bg"]};
+        border: 1px solid {t["border"]};
+        color: {t["fg"]};
+        border-radius: 4px;
+    }}
+    QListWidget::item:selected {{
+        background-color: {t["accent"]};
         color: {t["btn_fg"]};
-        position: absolute;
-        top: 0px;
-        left: 2px;
-        font-weight: bold;
     }}
     """
 
@@ -500,6 +514,3 @@ def get_theme_colors(theme_name="mocha"):
     Get raw color dictionary for a theme.
     """
     return THEMES.get(theme_name, THEMES["mocha"])
-
-
-MODERN_STYLE = get_style("mocha")
