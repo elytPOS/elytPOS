@@ -136,6 +136,44 @@ class ReceiptPrinter:
         """Replace the entire internal config structure and save."""
         return self.save_full_config(full_data)
 
+    def export_layout_to_file(self, layout_name, file_path):
+        """Export a specific layout configuration to a file."""
+        if layout_name not in self.full_config["layouts"]:
+            return False
+        try:
+            data = self.full_config["layouts"][layout_name].copy()
+            # Store the name in the file too, for suggestion upon import
+            data["_layout_name"] = layout_name
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=4)
+            return True
+        except Exception as e:
+            print(f"Error exporting layout: {e}")
+            return False
+
+    def import_layout_from_file(self, file_path):
+        """
+        Import a layout configuration from a file.
+        Returns (config_dict, suggested_name) or (None, None) on failure.
+        """
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+
+            suggested_name = data.pop("_layout_name", None)
+            if not suggested_name:
+                base = os.path.basename(file_path)
+                suggested_name = os.path.splitext(base)[0]
+
+            # Ensure the imported data is merged with defaults to prevent missing keys
+            merged = DEFAULT_CONFIG.copy()
+            merged.update(data)
+
+            return merged, suggested_name
+        except Exception as e:
+            print(f"Error importing layout: {e}")
+            return None, None
+
     def get_configured_printer(self):
         return self.config.get("printer_name")
 
@@ -251,7 +289,6 @@ class ReceiptPrinter:
         tax_id = config.get("tax_id", "")
         footer_text = config.get("footer_text", "Thank you!").replace("\n", "<br/>")
         show_mrp = config.get("show_mrp", True)
-        show_savings = config.get("show_savings", True)
 
         lbl_bill_to = config.get("label_bill_to", "Bill To:")
         lbl_gst = config.get("label_gst", "GST:")
@@ -260,7 +297,6 @@ class ReceiptPrinter:
         lbl_item_col = config.get("label_item_col", "Item Description")
         lbl_amount_col = config.get("label_amount_col", "Amount")
         lbl_net_payable = config.get("label_net_payable", "NET PAYABLE:")
-        lbl_total_savings = config.get("label_total_savings", "Total Savings:")
         currency = config.get("currency_symbol", "₹")
         item_col_width = config.get("item_col_width", 70)
         amount_col_width = 100 - item_col_width
@@ -274,7 +310,6 @@ class ReceiptPrinter:
         m_b = config.get("margin_bottom", 1)
 
         rows = ""
-        total_mrp = 0.0
         for item in items:
             uom = item.get("uom", "")
             subtotal = item["quantity"] * item["price"]

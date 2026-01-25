@@ -50,7 +50,7 @@ def create_db_if_missing(config_path):
 
 
 def main():
-    app = QApplication(sys.argv)
+    _app = QApplication(sys.argv)
 
     if getattr(sys, "frozen", False):
         application_path = os.path.dirname(sys.executable)
@@ -75,7 +75,7 @@ def main():
     db.add_language("Hindi", "hi")
     db.add_language("Marathi", "mr")
     langs = db.get_languages()
-    hindi_id = next((l[0] for l in langs if l[1] == "Hindi"), None)
+    hindi_id = next((lang[0] for lang in langs if lang[1] == "Hindi"), None)
     print("Languages seeded.")
 
     db.add_uom("gram", "g")

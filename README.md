@@ -27,7 +27,7 @@
 - 📦 **Smart Inventory:** Comprehensive product management with support for barcodes, multiple UOMs (Units of Measure), and fuzzy search.
 - 💰 **Dynamic Schemes:** Implementation of complex promotional rules, including percentage discounts, absolute rate changes, and bulk quantity offers.
 - 👥 **Customer Relationship:** Integrated customer database with instant lookup and multi-year transaction history.
-- 🖨️ **Advanced Receipt Designer:** Fully customizable bill layouts with live paper-style preview, multiple saved layouts, and professional themes (Classic, Modern, Minimal).
+- 🖨️ **Advanced Receipt Designer:** Fully customizable bill layouts with live paper-style preview, multiple saved layouts, import/export capabilities, and professional themes (Classic, Modern, Minimal).
 - 🔐 **Secure & Multi-User:** Role-based access control with encrypted password storage and automated database backups.
 - 🧮 **Built-in Calculator:** Seamless, non-modal GUI calculator with live evaluation and operation chaining.
 

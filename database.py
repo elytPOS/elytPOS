@@ -4,7 +4,6 @@ Database management system for elytPOS.
 
 import configparser
 import os
-import sys
 
 import psycopg2
 import psycopg2.pool
