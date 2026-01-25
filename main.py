@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QScrollArea,
     QFileDialog,
-    QInputDialog,
 )
 
 from database import DatabaseManager
@@ -677,20 +676,14 @@ class LanguageMasterDialog(QDialog):
         Refresh the list of supported languages from the database.
         """
         self.table.setRowCount(0)
-        for row, l in enumerate(self.db.get_languages()):
+        for row, lang in enumerate(self.db.get_languages()):
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(l[1]))
-            self.table.setItem(row, 1, QTableWidgetItem(l[2] or ""))
-            trans_btn = QPushButton("Manage")
-            trans_btn.setObjectName("btnSave")
-            trans_btn.clicked.connect(
-                lambda _, lid=l[0], lname=l[1]: self.open_translations(lid, lname)
-            )
-            self.table.setCellWidget(row, 2, trans_btn)
-            del_btn = QPushButton("Del")
-            del_btn.setObjectName("btnDelete")
-            del_btn.clicked.connect(lambda _, lid=l[0]: self.delete_lang(lid))
-            self.table.setCellWidget(row, 3, del_btn)
+            self.table.setItem(row, 0, QTableWidgetItem(lang[1]))
+            self.table.setItem(row, 1, QTableWidgetItem(lang[2]))
+            res_btn = QPushButton("Delete")
+            res_btn.setObjectName("btnDelete")
+            res_btn.clicked.connect(lambda _, lid=lang[0]: self.delete_language(lid))
+            self.table.setCellWidget(row, 2, res_btn)
 
     def open_translations(self, lid, lname):
         """
@@ -1622,12 +1615,12 @@ class LanguageSelectionDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Choose Printing Language:"))
         self.list_widget = QListWidget()
-        item = QListWidgetItem("Default (English/Original)")
+        item = QListWidgetItem("Original (English)")
         item.setData(Qt.UserRole, None)
         self.list_widget.addItem(item)
-        for l in self.db.get_languages():
-            item = QListWidgetItem(l[1])
-            item.setData(Qt.UserRole, l[0])
+        for lang in self.db.get_languages():
+            item = QListWidgetItem(lang[1])
+            item.setData(Qt.UserRole, lang[0])
             self.list_widget.addItem(item)
         self.list_widget.setCurrentRow(0)
         layout.addWidget(self.list_widget)
@@ -2607,21 +2600,33 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         menubar = self.menuBar()
-        file_menu = menubar.addMenu("&Administration")
+        menubar.setFont(QFont("FiraCode Nerd Font", 10))
         role = self.current_user[3]
-        if role == "admin":
-            user_action = QAction("&User Master", self)
-            user_action.triggered.connect(self.open_user_master)
-            file_menu.addAction(user_action)
+
+        # Masters Menu
+        masters_menu = menubar.addMenu("&Masters")
         if role in ("admin", "manager"):
             inv_action = QAction("&Item Master (Ctrl+I)", self)
             inv_action.setShortcut("Ctrl+I")
             inv_action.triggered.connect(self.open_inventory)
-            file_menu.addAction(inv_action)
+            masters_menu.addAction(inv_action)
+            masters_menu.addAction("&Customer Master", self.open_customer_master)
+            masters_menu.addAction("&UOM Master", self.open_uom_master)
+            masters_menu.addAction("&Language Master", self.open_language_master)
+
+        if role == "admin":
+            user_action = QAction("&User Master", self)
+            user_action.triggered.connect(self.open_user_master)
+            masters_menu.addAction(user_action)
+
+        # Transactions Menu
+        if role in ("admin", "manager"):
+            trans_menu = menubar.addMenu("&Transactions")
             pur_action = QAction("&Purchase Master", self)
             pur_action.triggered.connect(self.open_purchase_master)
-            file_menu.addAction(pur_action)
-            schemes_menu = file_menu.addMenu("&Schemes")
+            trans_menu.addAction(pur_action)
+
+            schemes_menu = trans_menu.addMenu("&Schemes")
             schemes_menu.addAction(
                 "&Add New Scheme", lambda: self.open_scheme_entry(None)
             )
@@ -2631,25 +2636,28 @@ class MainWindow(QMainWindow):
             schemes_menu.addAction(
                 "&List Schemes", lambda: self.open_scheme_list("list")
             )
-            file_menu.addAction("&Customer Master", self.open_customer_master)
-            file_menu.addAction("&UOM Master", self.open_uom_master)
-            file_menu.addAction("&Language Master", self.open_language_master)
+
+        # Tools Menu
+        tools_menu = menubar.addMenu("&Tools")
+        calc_action = QAction("&Calculator (F8)", self)
+        calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
+        calc_action.triggered.connect(self.open_calculator)
+        tools_menu.addAction(calc_action)
+
         if role == "admin":
-            file_menu.addAction("&Maintenance", self.open_maintenance)
-            file_menu.addAction("&Recycle Bin", self.open_recycle_bin)
-            file_menu.addAction("Printer &Settings", self.open_printer_config)
+            tools_menu.addAction("&Maintenance", self.open_maintenance)
+            tools_menu.addAction("&Recycle Bin", self.open_recycle_bin)
 
-        theme_menu = file_menu.addMenu("&Appearance Themes")
+        # Settings Menu
+        settings_menu = menubar.addMenu("&Settings")
+        if role == "admin":
+            settings_menu.addAction("Printer &Settings", self.open_printer_config)
 
+        theme_menu = settings_menu.addMenu("&Appearance Themes")
         for theme_id in styles.THEMES:
             action = QAction(theme_id.replace("_", " ").capitalize(), self)
             action.triggered.connect(lambda checked, t=theme_id: self.apply_theme(t))
             theme_menu.addAction(action)
-
-        calc_action = QAction("&Calculator (F8)", self)
-        calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
-        calc_action.triggered.connect(self.open_calculator)
-        file_menu.addAction(calc_action)
 
         help_menu = menubar.addMenu("&Help")
         help_action = QAction("&User Guide (F1)", self)

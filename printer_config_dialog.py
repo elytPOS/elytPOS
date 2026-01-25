@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFontComboBox,
     QDoubleSpinBox,
     QScrollArea,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt
 
@@ -144,6 +145,15 @@ class PrinterConfigDialog(QDialog):
         btn_row.addWidget(btn_new)
         btn_row.addWidget(btn_del)
         l_layout.addLayout(btn_row)
+
+        btn_row2 = QHBoxLayout()
+        btn_import = QPushButton("Import Template")
+        btn_import.clicked.connect(self.import_layout)
+        btn_export = QPushButton("Export Template")
+        btn_export.clicked.connect(self.export_layout)
+        btn_row2.addWidget(btn_import)
+        btn_row2.addWidget(btn_export)
+        l_layout.addLayout(btn_row2)
 
         form.addRow(layout_box)
 
@@ -497,6 +507,83 @@ class PrinterConfigDialog(QDialog):
             config=self.config,
         )
         self.preview_area.setHtml(html)
+
+    def import_layout(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Layout Template",
+            "",
+            "Template Files (*.template);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        config, suggested_name = self.printer_manager.import_layout_from_file(file_path)
+        if not config:
+            QMessageBox.warning(self, "Error", "Failed to load layout from file.")
+            return
+
+        # Ask for name
+        while True:
+            name, ok = QInputDialog.getText(
+                self,
+                "Import Layout",
+                "Enter name for the new layout:",
+                text=suggested_name,
+            )
+            if not ok:
+                return
+            if not name:
+                continue
+            if name in self.full_config["layouts"]:
+                res = QMessageBox.warning(
+                    self,
+                    "Duplicate Name",
+                    f"Layout '{name}' already exists. Overwrite?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if res == QMessageBox.No:
+                    continue
+            break
+
+        self.full_config["layouts"][name] = config
+
+        # Update UI
+        self.updating_ui = True
+        if self.layout_combo.findText(name) == -1:
+            self.layout_combo.addItem(name)
+        self.layout_combo.setCurrentText(name)
+        self.updating_ui = False
+
+        self.change_layout(name)
+        QMessageBox.information(
+            self, "Success", f"Layout '{name}' imported successfully."
+        )
+
+    def export_layout(self):
+        name = self.layout_combo.currentText()
+        if not name:
+            return
+
+        # Sync current UI changes to config before exporting
+        self.sync_config_from_ui()
+
+        default_filename = f"{name.lower().replace(' ', '_')}.template"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Layout Template",
+            default_filename,
+            "Template Files (*.template);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        if self.printer_manager.export_layout_to_file(name, file_path):
+            QMessageBox.information(
+                self, "Success", f"Layout '{name}' exported to {file_path}"
+            )
+        else:
+            QMessageBox.warning(self, "Error", "Failed to export layout.")
 
     def save_and_exit(self):
         self.sync_config_from_ui()
