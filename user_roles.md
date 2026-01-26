@@ -1,39 +1,44 @@
 # 🔐 User Roles & Permissions
 
-elytPOS employs a granular **Role-Based Access Control (RBAC)** system to ensure security and operational efficiency. Each user is assigned one of three specific roles, each with a defined set of permissions.
+elytPOS employs a flexible **Role-Based Access Control (RBAC)** system. While users are assigned a primary role (Admin, Manager, Staff), **individual permissions can be customized** for each user, providing complete control over system access.
 
 ---
 
-## 📋 Role Matrix
+## 📋 Permission Categories
 
-| Feature | Staff | Manager | Admin |
-| :--- | :---: | :---: | :---: |
-| **Billing & Invoicing** | ✅ | ✅ | ✅ |
-| **Product Search** | ✅ | ✅ | ✅ |
-| **Integrated Calculator** | ✅ | ✅ | ✅ |
-| **Sales History (View)** | ✅ | ✅ | ✅ |
-| **Customer Master** | ❌ | ✅ | ✅ |
-| **Item Master (Inventory)** | ❌ | ✅ | ✅ |
-| **Purchase Management** | ❌ | ✅ | ✅ |
-| **Scheme Management** | ❌ | ✅ | ✅ |
-| **UOM & Language Master** | ❌ | ✅ | ✅ |
-| **User Management** | ❌ | ❌ | ✅ |
-| **Printer Settings** | ❌ | ❌ | ✅ |
-| **Database Maintenance** | ❌ | ❌ | ✅ |
-| **Recycle Bin Access** | ❌ | ❌ | ✅ |
+The system controls access through the following granular permissions:
+
+| Permission Flag | Description |
+| :--- | :--- |
+| **Billing & Sales** | Create invoices, access the main billing screen. |
+| **View Reports** | Access Sales History and Day Book. |
+| **Manage Inventory** | Add/Edit items, UOMs, and Languages. Access Recycle Bin. |
+| **Manage Customers** | Add/Edit customer details. |
+| **Manage Purchases** | Record purchase invoices and view purchase history. |
+| **Manage Schemes** | Create and modify promotional schemes. |
+| **Manage Users** | Add/Edit system users and assign permissions (Admin only). |
+| **System Settings** | Configure Printer and Company details (Admin only). |
+| **Database Ops** | Perform backups, restore, and maintenance (Admin only). |
 
 ---
 
-## 👤 Role Descriptions
+## 👤 Role Presets
+
+When creating a user, selecting a role automatically applies a standard set of permissions. You can then fine-tune these checkboxes manually.
 
 ### 🛠️ Admin
-The **Admin** has unrestricted access to the entire system. This role is responsible for core configuration, managing other users, adjusting printer settings, and performing database maintenance (backups, purges, etc.).
+*   **Default:** All Permissions Enabled.
+*   **Focus:** Full system control, configuration, and user management.
 
 ### 🏢 Manager
-The **Manager** is designed for supervisors who need to manage inventory and business logic. They can add/edit products, manage promotional schemes, record purchases from suppliers, and maintain the customer database. They *cannot* access system settings or user management.
+*   **Default:** Billing, Reports, Inventory, Customers, Purchases, Schemes.
+*   **Excluded:** User Management, System Settings, Database Ops.
+*   **Focus:** Business operations and inventory management.
 
 ### 🧑‍💼 Staff
-The **Staff** role is optimized for front-line cashiers. Access is restricted to essential sales functions: creating bills, searching for products, viewing transaction history, and using the built-in calculator. This ensures a focused and secure environment for daily operations.
+*   **Default:** Billing, Reports.
+*   **Excluded:** All Master data management and Admin functions.
+*   **Focus:** Fast and secure checkout operations.
 
 ---
 

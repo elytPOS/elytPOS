@@ -36,11 +36,61 @@ class DatabaseManager:
     Handles all database operations, connections, and migrations.
     """
 
-    def __init__(self):
+    def __init__(self, dbname=None):
         self.conn_params = self.load_config()
+        if dbname:
+            self.conn_params["dbname"] = dbname
         self.pool = None
         self.init_pool()
         self.init_db()
+
+    @staticmethod
+    def list_databases(config_params):
+        """List all databases matching the elytpos pattern."""
+        import psycopg2
+
+        dbs = []
+        try:
+            # Connect to default 'postgres' database to list others
+            params = config_params.copy()
+            params["dbname"] = "postgres"
+            conn = psycopg2.connect(**params)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT datname FROM pg_database WHERE datname LIKE 'elytpos_%' AND datistemplate = false;"
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                dbs.append(row[0])
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error listing databases: {e}")
+        return dbs
+
+    @staticmethod
+    def create_database(config_params, new_db_name):
+        """Create a new database."""
+        import psycopg2
+
+        try:
+            params = config_params.copy()
+            params["dbname"] = "postgres"
+            conn = psycopg2.connect(**params)
+            conn.autocommit = True
+            cur = conn.cursor()
+            # Sanitize db name to prevent injection (basic check)
+            safe_name = "".join(
+                c for c in new_db_name if c.isalnum() or c in ("_", "-")
+            )
+            cur.execute(f'CREATE DATABASE "{safe_name}"')
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error creating database {new_db_name}: {e}")
+            return False
 
     def init_pool(self):
         """Initialize the threaded connection pool."""
@@ -50,12 +100,12 @@ class DatabaseManager:
             print(f"Error creating connection pool: {e}")
             raise e
 
-    def load_config(self):
+    @staticmethod
+    def load_config():
         """Load database parameters from config file."""
         config = configparser.ConfigParser()
         config_path = os.path.join(get_app_path(), "db.config")
         defaults = {
-            "dbname": "elytpos_db",
             "user": "elytpos_user",
             "password": "elytpos_password",
             "host": "localhost",
@@ -95,6 +145,40 @@ class DatabaseManager:
                 deleted_at TIMESTAMP
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS uoms (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(20) UNIQUE NOT NULL,
+                alias VARCHAR(10) UNIQUE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS languages (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) UNIQUE NOT NULL,
+                code VARCHAR(10) UNIQUE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS customers (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                mobile VARCHAR(15) UNIQUE,
+                address TEXT,
+                email VARCHAR(100)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                full_name VARCHAR(100),
+                role VARCHAR(20) DEFAULT 'staff',
+                permissions TEXT
+            )
+            """,
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;",
             """
             CREATE TABLE IF NOT EXISTS product_aliases (
                 id SERIAL PRIMARY KEY,
@@ -169,22 +253,6 @@ class DatabaseManager:
             )
             """,
             """
-            CREATE TABLE IF NOT EXISTS uoms (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(20) UNIQUE NOT NULL,
-                alias VARCHAR(10) UNIQUE
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                full_name VARCHAR(100),
-                role VARCHAR(20) DEFAULT 'staff'
-            )
-            """,
-            """
             CREATE TABLE IF NOT EXISTS held_sales (
                 id SERIAL PRIMARY KEY,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -201,22 +269,6 @@ class DatabaseManager:
                 price_at_sale DECIMAL(12, 3) NOT NULL,
                 uom VARCHAR(20),
                 mrp DECIMAL(12, 3)
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS languages (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(50) UNIQUE NOT NULL,
-                code VARCHAR(10) UNIQUE
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS customers (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(100) NOT NULL,
-                mobile VARCHAR(15) UNIQUE,
-                address TEXT,
-                email VARCHAR(100)
             )
             """,
             """
@@ -244,8 +296,9 @@ class DatabaseManager:
                 try:
                     cur.execute(command)
                     conn.commit()
-                except psycopg2.Error:
+                except psycopg2.Error as e:
                     conn.rollback()
+                    print(f"Error executing DB init command: {e}\nCommand: {command}")
             cur.execute("SELECT COUNT(*) FROM uoms")
             if cur.fetchone()[0] == 0:
                 default_uoms = ["pcs", "kg", "g", "ltr", "ml", "box", "pkt"]
@@ -412,18 +465,20 @@ class DatabaseManager:
         conn.close()
         return translated_items
 
-    def add_user(self, username, password, full_name, role="staff"):
+    def add_user(self, username, password, full_name, role="staff", permissions=None):
         """Add user."""
         import hashlib
+        import json
 
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        perms_json = json.dumps(permissions) if permissions else None
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                """INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)
-                   ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role""",
-                (username, pwd_hash, full_name, role),
+                """INSERT INTO users (username, password, full_name, role, permissions) VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role, permissions = EXCLUDED.permissions""",
+                (username, pwd_hash, full_name, role, perms_json),
             )
             conn.commit()
             return True
@@ -438,7 +493,9 @@ class DatabaseManager:
         """Get users."""
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, username, full_name, role FROM users ORDER BY username")
+        cur.execute(
+            "SELECT id, username, full_name, role, permissions FROM users ORDER BY username"
+        )
         users = cur.fetchall()
         cur.close()
         conn.close()
@@ -465,7 +522,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, username, full_name, role FROM users WHERE username = %s AND password = %s",
+            "SELECT id, username, full_name, role, permissions FROM users WHERE username = %s AND password = %s",
             (username, pwd_hash),
         )
         user = cur.fetchone()

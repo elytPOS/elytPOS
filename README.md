@@ -24,11 +24,12 @@
 ## ✨ Key Features
 
 - ⚡ **Lightning Fast Billing:** Optimized for rapid, keyboard-driven data entry with minimal mouse reliance.
+- 🏢 **Multi-Company Support:** Manage multiple businesses and financial years independently with automated database creation and switching.
 - 📦 **Smart Inventory:** Comprehensive product management with support for barcodes, multiple UOMs (Units of Measure), and fuzzy search.
 - 💰 **Dynamic Schemes:** Implementation of complex promotional rules, including percentage discounts, absolute rate changes, and bulk quantity offers.
 - 👥 **Customer Relationship:** Integrated customer database with instant lookup and multi-year transaction history.
 - 🖨️ **Advanced Receipt Designer:** Fully customizable bill layouts with live paper-style preview, multiple saved layouts, import/export capabilities, and professional themes (Classic, Modern, Minimal).
-- 🔐 **Secure & Multi-User:** Role-based access control with encrypted password storage and automated database backups.
+- 🔐 **Secure & Multi-User:** Role-based access control with encrypted password storage, fine-grained custom permissions, and automated database backups.
 - 🧮 **Built-in Calculator:** Seamless, non-modal GUI calculator with live evaluation and operation chaining.
 
 ## 🔐 Security & Roles
@@ -56,8 +57,7 @@ Explore all options in [THEME.md](theme.md).
 *Optimized for rapid data entry with real-time total calculation and fuzzy product search.*
 
 ### 🖨️ Advanced Receipt Designer
-![Receipt Designer](screenshots/designer.png)
-*Fully customizable bill layouts with live paper-style preview and multiple saved layouts.*
+*Fully customizable bill layouts with live paper-style preview, multiple saved layouts, import/export capabilities, and professional themes (Classic, Modern, Minimal).*
 
 ### 🎨 Bill Themes
 | Classic | Modern | Minimal |
