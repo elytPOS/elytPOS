@@ -45,9 +45,10 @@ DEFAULT_CONFIG = {
 
 
 class ReceiptPrinter:
-    def __init__(self):
+    def __init__(self, db_manager=None):
         self.conn = None
         self.printers = {}
+        self.db = db_manager
         self.config_path = self.get_config_path()
         self.full_config = {
             "active_layout": "Default",
@@ -56,6 +57,60 @@ class ReceiptPrinter:
         self.config = self.load_config()
         if CUPS_AVAILABLE:
             self.refresh_printers()
+        if self.db:
+            self.load_from_db()
+
+    def load_from_db(self):
+        """
+        Pull company details from database and overlay onto current config.
+        """
+        try:
+            # 1. Shop Name
+            print_name = self.db.get_setting("print_name") or self.db.get_setting(
+                "company_name"
+            )
+            if print_name:
+                self.config["shop_name"] = print_name
+
+            # 2. Tax ID
+            gstin = self.db.get_setting("gstin")
+            if gstin:
+                self.config["tax_id"] = gstin
+
+            # 3. Currency
+            sym = self.db.get_setting("currency_symbol")
+            if sym:
+                self.config["currency_symbol"] = sym
+
+            # 4. Address & Contact (New fields in config)
+            addr = self.db.get_setting("address")
+            # city = self.db.get_setting("city") # Unused
+            state = self.db.get_setting("state")
+            country = self.db.get_setting("country")
+
+            # Construct address string
+            full_addr = addr or ""
+            if state:
+                full_addr += f", {state}"
+            if country and country.lower() != "india":
+                full_addr += f", {country}"
+
+            if full_addr:
+                self.config["shop_address"] = full_addr
+
+            phone = self.db.get_setting("phone")
+            email = self.db.get_setting("email")
+            contact_parts = []
+            if phone:
+                contact_parts.append(f"Ph: {phone}")
+            if email:
+                contact_parts.append(f"Email: {email}")
+
+            if contact_parts:
+                self.config["shop_contact"] = " | ".join(contact_parts)
+
+        except Exception as e:
+            print(f"Error loading printer settings from DB: {e}")
 
     def get_config_path(self):
         if getattr(sys, "frozen", False):
@@ -286,6 +341,8 @@ class ReceiptPrinter:
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
         header_text = config.get("header_text", "ELYT POS")
         shop_name = config.get("shop_name", "KIRANA STORE")
+        shop_addr = config.get("shop_address", "")
+        shop_contact = config.get("shop_contact", "")
         tax_id = config.get("tax_id", "")
         footer_text = config.get("footer_text", "Thank you!").replace("\n", "<br/>")
         show_mrp = config.get("show_mrp", True)
@@ -334,6 +391,17 @@ class ReceiptPrinter:
             else ""
         )
 
+        addr_html = (
+            f'<div style="text-align:center;font-size:0.9em;margin-bottom:1mm">{shop_addr}</div>'
+            if shop_addr
+            else ""
+        )
+        contact_html = (
+            f'<div style="text-align:center;font-size:0.9em;margin-bottom:1mm">{shop_contact}</div>'
+            if shop_contact
+            else ""
+        )
+
         return f"""
         <html>
         <style>
@@ -348,6 +416,8 @@ class ReceiptPrinter:
         <body>
             <div class="header">{header_text}</div>
             <div class="shop">{shop_name}</div>
+            {addr_html}
+            {contact_html}
             {tax_html}
             <div style="font-size:0.9em;margin-bottom:1mm;border-bottom:0.1mm solid #ccc">{lbl_date} {now} | {lbl_bill_no} #{sale_id}</div>
             {cust_html}
@@ -366,6 +436,8 @@ class ReceiptPrinter:
     def _generate_modern_html(self, items, total, sale_id, customer_info, config):
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
         shop_name = config.get("shop_name", "KIRANA STORE")
+        shop_addr = config.get("shop_address", "")
+        shop_contact = config.get("shop_contact", "")
         tax_id = config.get("tax_id", "")
         footer_text = config.get("footer_text", "Thank you!").replace("\n", "<br/>")
         currency = config.get("currency_symbol", "₹")
@@ -391,6 +463,17 @@ class ReceiptPrinter:
             else ""
         )
 
+        addr_html = (
+            f'<div style="font-size:0.8em;margin-top:1mm">{shop_addr}</div>'
+            if shop_addr
+            else ""
+        )
+        contact_html = (
+            f'<div style="font-size:0.8em;margin-top:1mm">{shop_contact}</div>'
+            if shop_contact
+            else ""
+        )
+
         style_content = "@page { margin: 0; } "
         style_content += (
             "body { font-family: '%s', sans-serif; padding: %smm %smm %smm %smm; font-size: %s; color: #333; } "
@@ -409,7 +492,7 @@ class ReceiptPrinter:
         <html>
         <style>{style_content}</style>
         <body>
-            <div class="h"><div class="s">{shop_name}</div>{tax_html}</div>
+            <div class="h"><div class="s">{shop_name}</div>{addr_html}{contact_html}{tax_html}</div>
             <div style="display:grid;grid-template-columns:25% 75%;font-size:0.9em;margin-bottom:2mm"><b>Bill:</b><span>#{sale_id}</span><b>Date:</b><span>{now}</span></div>
             {cust_section}
             <table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th align="right">Amt</th></tr></thead><tbody>{rows}</tbody></table>
@@ -424,6 +507,8 @@ class ReceiptPrinter:
     def _generate_minimal_html(self, items, total, sale_id, customer_info, config):
         now = datetime.now().strftime("%d-%m-%Y %H:%M")
         shop_name = config.get("shop_name", "KIRANA STORE")
+        shop_addr = config.get("shop_address", "")
+        shop_contact = config.get("shop_contact", "")
         currency = config.get("currency_symbol", "₹")
         font_family = config.get("font_family", "serif")
         size_map = {"Small": "7pt", "Medium": "8pt", "Large": "9pt"}
@@ -438,6 +523,17 @@ class ReceiptPrinter:
                 f'<div style="margin-bottom:3mm"><div style="display:flex;justify-content:space-between;font-weight:600"><span>{it["name"]}</span><span>{currency} {self._fmt(it["quantity"] * it["price"])}</span></div><div style="font-size:0.85em;opacity:0.8">{self._fmt(it["quantity"])} x {self._fmt(it["price"])}</div></div>'
                 for it in items
             ]
+        )
+
+        addr_html = (
+            f'<div style="font-size:0.8em;opacity:0.8">{shop_addr}</div>'
+            if shop_addr
+            else ""
+        )
+        contact_html = (
+            f'<div style="font-size:0.8em;opacity:0.8">{shop_contact}</div>'
+            if shop_contact
+            else ""
         )
 
         style_content = "@page { margin: 0; } "
@@ -464,7 +560,11 @@ class ReceiptPrinter:
 <style>{style_content}</style>
 <body>
     <div class="min-header">
-        <div class="min-shop">{shop_name}</div>
+        <div>
+            <div class="min-shop">{shop_name}</div>
+            {addr_html}
+            {contact_html}
+        </div>
         <div class="min-meta">
             INV #{sale_id}<br/>{now}
         </div>

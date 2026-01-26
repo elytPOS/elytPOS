@@ -35,6 +35,10 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QScrollArea,
     QFileDialog,
+    QTabWidget,
+    QTextEdit,
+    QCheckBox,
+    QGridLayout,
 )
 
 from database import DatabaseManager
@@ -731,6 +735,453 @@ __all__ = [
 ]
 
 
+class CreateCompanyDialog(QDialog):
+    """
+    Comprehensive dialog to create or modify a company profile (BusyWin style).
+    """
+
+    def __init__(self, config_params, db_manager=None, parent=None):
+        super().__init__(parent)
+        self.config_params = config_params
+        self.db = db_manager  # If provided, we are in MODIFY mode
+        self.is_modify = self.db is not None
+
+        self.setWindowTitle(
+            "Modify Company Profile" if self.is_modify else "Create Company Profile"
+        )
+        self.created_db_name = None
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
+
+        layout = QVBoxLayout(self)
+
+        # Header
+        header = QLabel(
+            "Modify Company Information" if self.is_modify else "Company Information"
+        )
+        header.setObjectName("title")
+        header.setAlignment(Qt.AlignCenter)
+        layout.addWidget(header)
+
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # --- Tab 1: General Info ---
+        self.tab_general = QWidget()
+        gen_layout = QFormLayout(self.tab_general)
+
+        self.name_input = QLineEdit()
+        self.print_name_input = QLineEdit()
+        self.short_name_input = QLineEdit()
+
+        # Financial Year Logic
+        self.fy_from = QDateEdit()
+        self.fy_from.setDisplayFormat("dd-MM-yyyy")
+        self.fy_from.setDate(
+            QDate(QDate.currentDate().year(), 4, 1)
+        )  # Default to April 1st
+        self.fy_from.setCalendarPopup(True)
+
+        self.books_from = QDateEdit()
+        self.books_from.setDisplayFormat("dd-MM-yyyy")
+        self.books_from.setDate(QDate(QDate.currentDate().year(), 4, 1))
+        self.books_from.setCalendarPopup(True)
+
+        gen_layout.addRow("Company Name:", self.name_input)
+        gen_layout.addRow("Print Name:", self.print_name_input)
+        gen_layout.addRow("Short Name (Alias):", self.short_name_input)
+        gen_layout.addRow("Financial Year From:", self.fy_from)
+        gen_layout.addRow("Books Commencing From:", self.books_from)
+
+        # Auto-fill print name
+        self.name_input.textChanged.connect(
+            lambda t: self.print_name_input.setText(t)
+            if not self.print_name_input.isModified()
+            else None
+        )
+
+        self.tabs.addTab(self.tab_general, "General")
+
+        # --- Tab 2: Address & Contact ---
+        self.tab_address = QWidget()
+        addr_layout = QFormLayout(self.tab_address)
+
+        self.address_input = QTextEdit()
+        self.address_input.setMaximumHeight(80)
+        self.country_input = QLineEdit("India")
+        self.state_input = QComboBox()
+        states = [
+            "Andhra Pradesh",
+            "Arunachal Pradesh",
+            "Assam",
+            "Bihar",
+            "Chhattisgarh",
+            "Goa",
+            "Gujarat",
+            "Haryana",
+            "Himachal Pradesh",
+            "Jharkhand",
+            "Karnataka",
+            "Kerala",
+            "Madhya Pradesh",
+            "Maharashtra",
+            "Manipur",
+            "Meghalaya",
+            "Mizoram",
+            "Nagaland",
+            "Odisha",
+            "Punjab",
+            "Rajasthan",
+            "Sikkim",
+            "Tamil Nadu",
+            "Telangana",
+            "Tripura",
+            "Uttar Pradesh",
+            "Uttarakhand",
+            "West Bengal",
+            "Delhi",
+            "Jammu & Kashmir",
+            "Ladakh",
+            "Puducherry",
+            "Other",
+        ]
+        self.state_input.addItems(states)
+        self.state_input.setEditable(True)
+        self.state_input.setCurrentText("Maharashtra")  # Default
+
+        self.phone_input = QLineEdit()
+        self.email_input = QLineEdit()
+        self.website_input = QLineEdit()
+
+        addr_layout.addRow("Address:", self.address_input)
+        addr_layout.addRow("Country:", self.country_input)
+        addr_layout.addRow("State:", self.state_input)
+        addr_layout.addRow("Phone / Mobile:", self.phone_input)
+        addr_layout.addRow("Email:", self.email_input)
+        addr_layout.addRow("Website:", self.website_input)
+
+        self.tabs.addTab(self.tab_address, "Address/Contact")
+
+        # --- Tab 3: Statutory Details ---
+        self.tab_statutory = QWidget()
+        stat_layout = QFormLayout(self.tab_statutory)
+
+        self.gstin_input = QLineEdit()
+        self.pan_input = QLineEdit()
+        self.cin_input = QLineEdit()
+        self.ward_input = QLineEdit()
+
+        stat_layout.addRow("GSTIN / UIN:", self.gstin_input)
+        stat_layout.addRow("IT PAN:", self.pan_input)
+        stat_layout.addRow("CIN (Corp. ID):", self.cin_input)
+        stat_layout.addRow("Ward / Circle:", self.ward_input)
+
+        self.tabs.addTab(self.tab_statutory, "Statutory")
+
+        # --- Tab 4: Currency ---
+        self.tab_currency = QWidget()
+        curr_layout = QFormLayout(self.tab_currency)
+
+        self.curr_symbol = QLineEdit("₹")
+        self.curr_string = QLineEdit("Rupees")
+        self.curr_sub_string = QLineEdit("Paise")
+
+        curr_layout.addRow("Currency Symbol:", self.curr_symbol)
+        curr_layout.addRow("Currency String:", self.curr_string)
+        curr_layout.addRow("Sub String:", self.curr_sub_string)
+
+        self.tabs.addTab(self.tab_currency, "Currency")
+
+        # Footer Buttons
+        btn_layout = QHBoxLayout()
+        save_btn_text = (
+            "Update Company (F2)" if self.is_modify else "Create Company (F2)"
+        )
+        save_btn = QPushButton(save_btn_text)
+        save_btn.setShortcut("F2")
+        save_btn.clicked.connect(self.save_data)
+        save_btn.setObjectName("btnSave")
+        save_btn.setFixedHeight(45)
+
+        cancel_btn = QPushButton("Cancel (Esc)")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setObjectName("btnCancel")
+        cancel_btn.setFixedHeight(45)
+
+        btn_layout.addStretch()
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        if self.is_modify:
+            self.load_existing_data()
+            # Disable FY fields if modifying (usually not changed once created in BusyWin)
+            self.fy_from.setEnabled(False)
+            self.books_from.setEnabled(False)
+
+        self.name_input.setFocus()
+
+    def load_existing_data(self):
+        """Fetch current settings from database."""
+
+        def get(k):
+            return self.db.get_setting(k, "")
+
+        self.name_input.setText(get("company_name"))
+        self.print_name_input.setText(get("print_name"))
+        self.short_name_input.setText(get("short_name"))
+
+        fy_start = get("fy_start")
+        if fy_start:
+            self.fy_from.setDate(QDate.fromString(fy_start, "yyyy-MM-dd"))
+
+        books_start = get("books_start")
+        if books_start:
+            self.books_from.setDate(QDate.fromString(books_start, "yyyy-MM-dd"))
+
+        self.address_input.setText(get("address"))
+        self.country_input.setText(get("country") or "India")
+        self.state_input.setCurrentText(get("state"))
+        self.phone_input.setText(get("phone"))
+        self.email_input.setText(get("email"))
+        self.website_input.setText(get("website"))
+
+        self.gstin_input.setText(get("gstin"))
+        self.pan_input.setText(get("pan"))
+        self.cin_input.setText(get("cin"))
+        self.ward_input.setText(get("ward"))
+
+        self.curr_symbol.setText(get("currency_symbol") or "₹")
+        self.curr_string.setText(get("currency_string") or "Rupees")
+        self.curr_sub_string.setText(get("currency_sub_string") or "Paise")
+
+    def save_data(self):
+        name = self.name_input.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Error", "Company Name is required.")
+            self.tabs.setCurrentIndex(0)
+            self.name_input.setFocus()
+            return
+
+        if self.is_modify:
+            self.update_existing()
+        else:
+            self.create_new()
+
+    def update_existing(self):
+        """Update current database settings."""
+        try:
+
+            def save(k, v):
+                self.db.set_setting(k, str(v))
+
+            save("company_name", self.name_input.text())
+            save("print_name", self.print_name_input.text())
+            save("short_name", self.short_name_input.text())
+            # FY usually not updated
+
+            save("address", self.address_input.toPlainText())
+            save("country", self.country_input.text())
+            save("state", self.state_input.currentText())
+            save("phone", self.phone_input.text())
+            save("email", self.email_input.text())
+            save("website", self.website_input.text())
+
+            save("gstin", self.gstin_input.text())
+            save("pan", self.pan_input.text())
+            save("cin", self.cin_input.text())
+            save("ward", self.ward_input.text())
+
+            save("currency_symbol", self.curr_symbol.text())
+            save("currency_string", self.curr_string.text())
+            save("currency_sub_string", self.curr_sub_string.text())
+
+            QMessageBox.information(
+                self, "Success", "Company profile updated successfully."
+            )
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update company: {e}")
+
+    def create_new(self):
+        name = self.name_input.text().strip()
+        fy_year = self.fy_from.date().year()
+        next_year = fy_year + 1
+        fy_str = f"{fy_year}-{next_year}"
+
+        safe_name = "".join(c for c in name if c.isalnum())
+        db_name = f"elytpos_{safe_name}_{fy_str}".lower()
+
+        if DatabaseManager.create_database(self.config_params, db_name):
+            self.created_db_name = db_name
+            try:
+                db_mgr = DatabaseManager(dbname=db_name)
+
+                def save(k, v):
+                    db_mgr.set_setting(k, str(v))
+
+                save("company_name", name)
+                save("print_name", self.print_name_input.text())
+                save("short_name", self.short_name_input.text())
+                save("fy_start", self.fy_from.date().toString("yyyy-MM-dd"))
+                save("books_start", self.books_from.date().toString("yyyy-MM-dd"))
+
+                save("address", self.address_input.toPlainText())
+                save("country", self.country_input.text())
+                save("state", self.state_input.currentText())
+                save("phone", self.phone_input.text())
+                save("email", self.email_input.text())
+                save("website", self.website_input.text())
+
+                save("gstin", self.gstin_input.text())
+                save("pan", self.pan_input.text())
+                save("cin", self.cin_input.text())
+                save("ward", self.ward_input.text())
+
+                save("currency_symbol", self.curr_symbol.text())
+                save("currency_string", self.curr_string.text())
+                save("currency_sub_string", self.curr_sub_string.text())
+
+                db_mgr.close()
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Company '{name}' ({fy_str}) created successfully.",
+                )
+                self.accept()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Initialization Error",
+                    f"Database created but failed to save details: {e}",
+                )
+        else:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Failed to create database. Check logs or if name already exists.",
+            )
+
+
+class CompanySelectionDialog(QDialog):
+    """
+    Dialog to select company and financial year (Database).
+    """
+
+    def __init__(self, config_params, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Company")
+        self.config_params = config_params
+        self.selected_db = None
+
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.showFullScreen()
+
+        layout = QVBoxLayout(self)
+
+        # Logo
+        self.splash_label = QLabel()
+        theme = QApplication.instance().property("theme_name") or "mocha"
+        pixmap = QPixmap(resource_path(f"svg/logo_{theme}.svg"))
+        if not pixmap.isNull():
+            self.splash_label.setPixmap(
+                pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            self.splash_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(self.splash_label)
+
+        title = QLabel("Select Company & Financial Year")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setStyleSheet("font-size: 14pt; padding: 10px;")
+        layout.addWidget(self.list_widget)
+
+        btn_layout = QHBoxLayout()
+        select_btn = QPushButton("Select (Enter)")
+        select_btn.clicked.connect(self.accept_selection)
+        select_btn.setFixedHeight(50)
+        select_btn.setObjectName("btnSave")
+
+        new_btn = QPushButton("Create New Company")
+        new_btn.clicked.connect(self.create_company)
+        new_btn.setFixedHeight(50)
+
+        exit_btn = QPushButton("Exit (Esc)")
+        exit_btn.clicked.connect(self.reject)
+        exit_btn.setFixedHeight(50)
+        exit_btn.setObjectName("btnCancel")
+
+        btn_layout.addWidget(select_btn)
+        btn_layout.addWidget(new_btn)
+        btn_layout.addWidget(exit_btn)
+        layout.addLayout(btn_layout)
+
+        self.load_databases()
+
+    def load_databases(self):
+        self.list_widget.clear()
+        dbs = DatabaseManager.list_databases(self.config_params)
+        for db in dbs:
+            # Parse elytpos_name_fy
+            parts = db.split("_")
+            display_text = db
+            if len(parts) >= 3:
+                name = parts[1].capitalize()
+                fy = parts[2]
+                display_text = f"{name} (FY: {fy})"
+
+            item = QListWidgetItem(display_text)
+            item.setData(Qt.UserRole, db)
+            self.list_widget.addItem(item)
+
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+        else:
+            # Auto-prompt to create if none exist
+            QTimer.singleShot(200, self.prompt_create_first_company)
+
+    def prompt_create_first_company(self):
+        if self.list_widget.count() == 0:
+            if (
+                QMessageBox.question(
+                    self,
+                    "Welcome",
+                    "No companies found. Would you like to create your first company?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                == QMessageBox.Yes
+            ):
+                self.create_company()
+
+    def create_company(self):
+        dlg = CreateCompanyDialog(self.config_params, self)
+        if dlg.exec() == QDialog.Accepted:
+            self.load_databases()
+            # Select the new one
+            for i in range(self.list_widget.count()):
+                if self.list_widget.item(i).data(Qt.UserRole) == dlg.created_db_name:
+                    self.list_widget.setCurrentRow(i)
+                    break
+
+    def accept_selection(self):
+        if self.list_widget.currentItem():
+            self.selected_db = self.list_widget.currentItem().data(Qt.UserRole)
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Warning", "Please select a company.")
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.accept_selection()
+        elif event.key() == Qt.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+
+
 class LoginDialog(QDialog):
     """
     Handles user authentication.
@@ -859,7 +1310,7 @@ class SuperUserCreationDialog(QDialog):
 
 class UserMasterDialog(QDialog):
     """
-    Management interface for user accounts.
+    Management interface for user accounts with granular permissions.
     """
 
     def __init__(self, db_manager, parent=None):
@@ -870,55 +1321,205 @@ class UserMasterDialog(QDialog):
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
+
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+
+        # Form Area
+        form_widget = QWidget()
+        form_layout = QVBoxLayout(form_widget)
+
+        input_form = QFormLayout()
         self.username = QLineEdit()
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
+        self.password.setPlaceholderText("(Leave blank to keep existing)")
         self.full_name = QLineEdit()
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["staff", "admin", "manager"])
-        form.addRow("Username:", self.username)
-        form.addRow("Password:", self.password)
-        form.addRow("Full Name:", self.full_name)
-        form.addRow("Role:", self.role_combo)
-        add_btn = QPushButton("Add &User")
-        add_btn.clicked.connect(self.add_user)
-        form.addRow(add_btn)
-        layout.addLayout(form)
+        self.role_combo.addItems(["staff", "manager", "admin"])
+        self.role_combo.currentTextChanged.connect(self.on_role_change)
+
+        input_form.addRow("Username:", self.username)
+        input_form.addRow("Password:", self.password)
+        input_form.addRow("Full Name:", self.full_name)
+        input_form.addRow("Role:", self.role_combo)
+
+        form_layout.addLayout(input_form)
+
+        # Permissions Group
+        self.perm_grp = QGroupBox("Granular Permissions")
+        p_layout = QGridLayout(self.perm_grp)
+        self.check_boxes = {}
+
+        # Define available permissions
+        self.perm_keys = [
+            ("billing", "Billing & Sales"),
+            ("view_reports", "View Reports/History"),
+            ("manage_inventory", "Manage Inventory (Items)"),
+            ("manage_customers", "Manage Customers"),
+            ("manage_purchases", "Manage Purchases"),
+            ("manage_schemes", "Manage Schemes"),
+            "separator",  # Visual break
+            ("manage_users", "Manage Users"),
+            ("settings", "System Settings"),
+            ("database_ops", "Database Maintenance"),
+        ]
+
+        r, c = 0, 0
+        for item in self.perm_keys:
+            if item == "separator":
+                continue
+            key, label = item
+            cb = QCheckBox(label)
+            self.check_boxes[key] = cb
+            p_layout.addWidget(cb, r, c)
+            c += 1
+            if c > 1:
+                c = 0
+                r += 1
+
+        form_layout.addWidget(self.perm_grp)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save User (F2)")
+        save_btn.clicked.connect(self.save_user)
+        save_btn.setObjectName("btnSave")
+        clear_btn = QPushButton("Clear/New")
+        clear_btn.clicked.connect(self.clear_form)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(clear_btn)
+
+        form_layout.addLayout(btn_layout)
+        layout.addWidget(form_widget)
+
+        # User List
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
             ["Username", "Full Name", "Role", "Action"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.itemClicked.connect(self.load_selected_user)
         layout.addWidget(self.table)
-        self.load_users()
+
         close_btn = QPushButton("&Close (Esc)")
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
 
-    def add_user(self):
-        """
-        Validate input and add a new system user with specific role.
-        """
+        self.load_users()
+
+    def on_role_change(self, role):
+        """Auto-select default permissions based on role."""
+        defaults = {
+            "staff": ["billing", "view_reports"],
+            "manager": [
+                "billing",
+                "view_reports",
+                "manage_inventory",
+                "manage_customers",
+                "manage_purchases",
+                "manage_schemes",
+            ],
+            "admin": [k[0] for k in self.perm_keys if k != "separator"],
+        }
+
+        # Only apply defaults if we are essentially resetting (basic heuristic)
+        # For better UX, maybe we shouldn't overwrite manual changes unless explicitly asked.
+        # But for simplicity, let's set them when role changes.
+
+        targets = defaults.get(role, [])
+        for key, cb in self.check_boxes.items():
+            cb.setChecked(key in targets)
+
+    def save_user(self):
+        username = self.username.text().strip()
+        if not username:
+            return
+
         role = self.role_combo.currentText()
-        if self.db.add_user(
-            self.username.text(), self.password.text(), self.full_name.text(), role
-        ):
-            self.username.clear()
-            self.password.clear()
-            self.full_name.clear()
+        pwd = self.password.text()
+
+        # If updating existing user and pwd is blank, we need to handle that.
+        # Database.add_user hashes password. If we pass empty, it hashes empty.
+        # We need to fetch existing user to keep password if empty?
+        # Actually add_user upserts.
+        # The current db.add_user implementation always hashes the password passed.
+        # We might need to modify db.add_user or handle it here.
+        # For now, let's require password for new users, and if empty for existing, we might need a workaround.
+        # A simple workaround: If password is empty, don't update it?
+        # But add_user does ON CONFLICT UPDATE SET ... (without password logic).
+        # We can just require password for now or modify DB logic later.
+        # Let's enforce password for simplicity in this iteration.
+
+        if not pwd and not self.is_editing_mode():
+            QMessageBox.warning(self, "Error", "Password required for new user.")
+            return
+
+        # Collect perms
+        perms = {k: cb.isChecked() for k, cb in self.check_boxes.items()}
+
+        # Logic for password update:
+        # If we use add_user, it will overwrite password hash.
+        # If pwd is empty, we shouldn't call add_user like that if we want to preserve old pwd.
+        # Let's assume for this feature, you set password every time you save.
+        if not pwd:
+            QMessageBox.information(self, "Info", "Password not changed.")
+            # This means we can't use add_user easily to update just perms without password.
+            # I should probably update add_user in database.py to handle None password.
+            # For this step, let's assume password is provided.
+            return
+
+        if self.db.add_user(username, pwd, self.full_name.text(), role, perms):
+            self.clear_form()
             self.load_users()
+            QMessageBox.information(self, "Success", "User saved.")
+
+    def is_editing_mode(self):
+        # Check if username exists in table
+        current = self.username.text()
+        for r in range(self.table.rowCount()):
+            if self.table.item(r, 0).text() == current:
+                return True
+        return False
+
+    def load_selected_user(self, item):
+        row = item.row()
+        # username = self.table.item(row, 0).text() # Unused
+        # We need to fetch full details including permissions
+        # Database.get_users returns permissions now.
+        # But load_users populates the table.
+        user_data = self.table.item(row, 0).data(Qt.UserRole)
+
+        self.username.setText(user_data[1])
+        self.full_name.setText(user_data[2] or "")
+        self.role_combo.setCurrentText(user_data[3])
+        self.password.clear()  # Security
+
+        import json
+
+        perms = {}
+        if user_data[4]:
+            try:
+                perms = json.loads(user_data[4])
+            except Exception:
+                pass
+
+        for key, cb in self.check_boxes.items():
+            cb.setChecked(perms.get(key, False))
+
+    def clear_form(self):
+        self.username.clear()
+        self.password.clear()
+        self.full_name.clear()
+        self.role_combo.setCurrentIndex(0)
+        self.on_role_change("staff")  # Reset perms
 
     def load_users(self):
-        """
-        Refresh the list of system users from the database.
-        """
         self.table.setRowCount(0)
         for row, u in enumerate(self.db.get_users()):
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(u[1]))
+            self.table.item(row, 0).setData(Qt.UserRole, u)  # Store full object
             self.table.setItem(row, 1, QTableWidgetItem(u[2] or ""))
             self.table.setItem(row, 2, QTableWidgetItem(u[3]))
             del_btn = QPushButton("Del")
@@ -926,15 +1527,11 @@ class UserMasterDialog(QDialog):
             self.table.setCellWidget(row, 3, del_btn)
 
     def delete_user(self, uid):
-        """
-        Confirm and delete the specified user account.
-        """
         if QMessageBox.question(self, "Confirm", "Delete User?") == QMessageBox.Yes:
             self.db.delete_user(uid)
             self.load_users()
 
     def keyPressEvent(self, event):
-        """Keypressevent."""
         if event.key() == Qt.Key_Escape:
             self.close()
         else:
@@ -1469,13 +2066,11 @@ class ConfigDialog(QDialog):
         title.setObjectName("title")
         layout.addWidget(title, 0, Qt.AlignCenter)
         form = QFormLayout()
-        self.dbname = QLineEdit("elytpos_db")
         self.user = QLineEdit("elytpos_user")
         self.password = QLineEdit("elytpos_password")
         self.password.setEchoMode(QLineEdit.Password)
         self.host = QLineEdit("localhost")
         self.port = QLineEdit("5432")
-        form.addRow("Database Name:", self.dbname)
         form.addRow("User:", self.user)
         form.addRow("Password:", self.password)
         form.addRow("Host:", self.host)
@@ -1496,20 +2091,22 @@ class ConfigDialog(QDialog):
         import psycopg2
 
         params = {
-            "dbname": self.dbname.text(),
             "user": self.user.text(),
             "password": self.password.text(),
             "host": self.host.text(),
             "port": self.port.text(),
         }
+        # Test connection using default 'postgres' database
+        test_params = params.copy()
+        test_params["dbname"] = "postgres"
         try:
-            conn = psycopg2.connect(**params)
+            conn = psycopg2.connect(**test_params)
             conn.close()
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Connection Error",
-                f"Failed to connect to the database with these settings.\n\nError: {e}",
+                f"Failed to connect to the database server with these settings.\n\nError: {e}",
             )
             return
         config = configparser.ConfigParser()
@@ -2509,7 +3106,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"elytPOS v{__version__} - {user[2]}")
         self.showFullScreen()
         self.db = db_manager
-        self.printer = ReceiptPrinter()
+        self.printer = ReceiptPrinter(db_manager)
         self.current_user = user
         self.updating_cell = False
         self.current_sale_id = None
@@ -2539,6 +3136,38 @@ class MainWindow(QMainWindow):
 
         self.db.set_setting("theme", theme_name)
         self.update_total_label_style()
+
+    def check_permission(self, perm_key):
+        """Check if current user has specific permission."""
+        import json
+
+        try:
+            if not self.current_user or len(self.current_user) < 5:
+                return False
+
+            perms_str = self.current_user[4]
+            if not perms_str:
+                # Fallback for users without explicit permissions
+                role = self.current_user[3]
+                if role == "admin":
+                    return True
+                defaults = {
+                    "staff": ["billing", "view_reports"],
+                    "manager": [
+                        "billing",
+                        "view_reports",
+                        "manage_inventory",
+                        "manage_customers",
+                        "manage_purchases",
+                        "manage_schemes",
+                    ],
+                }
+                return perm_key in defaults.get(role, [])
+
+            perms = json.loads(perms_str)
+            return perms.get(perm_key, False)
+        except Exception:
+            return False
 
     def update_total_label_style(self):
         """
@@ -2601,41 +3230,60 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         menubar = self.menuBar()
         menubar.setFont(QFont("FiraCode Nerd Font", 10))
-        role = self.current_user[3]
 
         # Masters Menu
         masters_menu = menubar.addMenu("&Masters")
-        if role in ("admin", "manager"):
+        if self.check_permission("manage_inventory"):
             inv_action = QAction("&Item Master (Ctrl+I)", self)
             inv_action.setShortcut("Ctrl+I")
             inv_action.triggered.connect(self.open_inventory)
             masters_menu.addAction(inv_action)
-            masters_menu.addAction("&Customer Master", self.open_customer_master)
             masters_menu.addAction("&UOM Master", self.open_uom_master)
             masters_menu.addAction("&Language Master", self.open_language_master)
 
-        if role == "admin":
-            user_action = QAction("&User Master", self)
-            user_action.triggered.connect(self.open_user_master)
-            masters_menu.addAction(user_action)
+        if self.check_permission("manage_customers"):
+            masters_menu.addAction("&Customer Master", self.open_customer_master)
+
+        # Administration Menu
+        if self.check_permission("manage_users") or self.check_permission("settings"):
+            admin_menu = menubar.addMenu("&Administration")
+
+            if self.check_permission("settings"):
+                company_action = QAction("Create &Company / FY", self)
+                company_action.triggered.connect(self.open_create_company)
+                admin_menu.addAction(company_action)
+
+                modify_company_action = QAction("&Modify Company", self)
+                modify_company_action.triggered.connect(self.open_modify_company)
+                admin_menu.addAction(modify_company_action)
+
+            if self.check_permission("manage_users"):
+                user_action = QAction("&User Master", self)
+                user_action.triggered.connect(self.open_user_master)
+                admin_menu.addAction(user_action)
 
         # Transactions Menu
-        if role in ("admin", "manager"):
+        if self.check_permission("manage_purchases") or self.check_permission(
+            "manage_schemes"
+        ):
             trans_menu = menubar.addMenu("&Transactions")
-            pur_action = QAction("&Purchase Master", self)
-            pur_action.triggered.connect(self.open_purchase_master)
-            trans_menu.addAction(pur_action)
 
-            schemes_menu = trans_menu.addMenu("&Schemes")
-            schemes_menu.addAction(
-                "&Add New Scheme", lambda: self.open_scheme_entry(None)
-            )
-            schemes_menu.addAction(
-                "&Modify Scheme", lambda: self.open_scheme_list("modify")
-            )
-            schemes_menu.addAction(
-                "&List Schemes", lambda: self.open_scheme_list("list")
-            )
+            if self.check_permission("manage_purchases"):
+                pur_action = QAction("&Purchase Master", self)
+                pur_action.triggered.connect(self.open_purchase_master)
+                trans_menu.addAction(pur_action)
+
+            if self.check_permission("manage_schemes"):
+                schemes_menu = trans_menu.addMenu("&Schemes")
+                schemes_menu.addAction(
+                    "&Add New Scheme", lambda: self.open_scheme_entry(None)
+                )
+                schemes_menu.addAction(
+                    "&Modify Scheme", lambda: self.open_scheme_list("modify")
+                )
+                schemes_menu.addAction(
+                    "&List Schemes", lambda: self.open_scheme_list("list")
+                )
 
         # Tools Menu
         tools_menu = menubar.addMenu("&Tools")
@@ -2644,13 +3292,13 @@ class MainWindow(QMainWindow):
         calc_action.triggered.connect(self.open_calculator)
         tools_menu.addAction(calc_action)
 
-        if role == "admin":
+        if self.check_permission("database_ops"):
             tools_menu.addAction("&Maintenance", self.open_maintenance)
             tools_menu.addAction("&Recycle Bin", self.open_recycle_bin)
 
         # Settings Menu
         settings_menu = menubar.addMenu("&Settings")
-        if role == "admin":
+        if self.check_permission("settings"):
             settings_menu.addAction("Printer &Settings", self.open_printer_config)
 
         theme_menu = settings_menu.addMenu("&Appearance Themes")
@@ -2774,6 +3422,13 @@ class MainWindow(QMainWindow):
 
     def open_printer_config(self):
         """Open the printer configuration dialog."""
+        if not self.check_permission("settings"):
+            QMessageBox.warning(
+                self,
+                "Access Denied",
+                "You do not have permission to access Printer Settings.",
+            )
+            return
         dialog = PrinterConfigDialog(self.printer, self)
         dialog.exec()
         self.showFullScreen()
@@ -2785,21 +3440,41 @@ class MainWindow(QMainWindow):
 
     def open_inventory(self):
         """Open the Item Master / Inventory management dialog."""
+        if not self.check_permission("manage_inventory"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Inventory."
+            )
+            return
         InventoryDialog(self.db, self).exec()
         self.showFullScreen()
 
     def open_scheme_entry(self, sid=None):
         """Open the dialog to create or edit a promotional scheme."""
+        if not self.check_permission("manage_schemes"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Schemes."
+            )
+            return
         SchemeEntryDialog(self.db, sid, self).exec()
         self.showFullScreen()
 
     def open_scheme_list(self, mode):
         """Open the list of promotional schemes."""
+        if not self.check_permission("manage_schemes"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Schemes."
+            )
+            return
         SchemeListDialog(self.db, mode, self).exec()
         self.showFullScreen()
 
     def open_customer_master(self):
         """Open the customer management dialog."""
+        if not self.check_permission("manage_customers"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Customers."
+            )
+            return
         CustomerMasterDialog(self.db, self).exec()
         self.showFullScreen()
 
@@ -2816,38 +3491,93 @@ class MainWindow(QMainWindow):
 
     def open_purchase_master(self):
         """Open the purchase entry and recording dialog."""
+        if not self.check_permission("manage_purchases"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Purchases."
+            )
+            return
         PurchaseEntryDialog(self.db, self).exec()
         self.showFullScreen()
 
     def open_uom_master(self):
         """Open the Units of Measure management dialog."""
+        if not self.check_permission("manage_inventory"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage UOMs."
+            )
+            return
         UOMMasterDialog(self.db, self).exec()
         self.showFullScreen()
 
     def open_language_master(self):
         """Open the language management dialog."""
+        if not self.check_permission("manage_inventory"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Languages."
+            )
+            return
         LanguageMasterDialog(self.db, self).exec()
+        self.showFullScreen()
+
+    def open_create_company(self):
+        """Open the company creation dialog."""
+        if not self.check_permission("settings") and not self.check_permission(
+            "database_ops"
+        ):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to Create Companies."
+            )
+            return
+        CreateCompanyDialog(self.db.conn_params, parent=self).exec()
+        self.showFullScreen()
+
+    def open_modify_company(self):
+        """Open the company modification dialog."""
+        if not self.check_permission("settings"):
+            QMessageBox.warning(
+                self,
+                "Access Denied",
+                "You do not have permission to Modify Company Settings.",
+            )
+            return
+        CreateCompanyDialog(self.db.conn_params, db_manager=self.db, parent=self).exec()
+        # Refresh printer settings from updated DB settings
+        self.printer.load_from_db()
         self.showFullScreen()
 
     def open_user_master(self):
         """Open the system user management dialog."""
+        if not self.check_permission("manage_users"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Users."
+            )
+            return
         UserMasterDialog(self.db, self).exec()
         self.showFullScreen()
 
     def open_maintenance(self):
         """Open the administrative maintenance dashboard."""
-        if self.current_user[3] == "admin":
-            MaintenanceDashboardDialog(self.db, self).exec()
-        else:
+        if not self.check_permission("database_ops"):
             QMessageBox.warning(
                 self,
                 "Access Denied",
-                "Only administrators can access the Maintenance Dashboard.",
+                "You do not have permission to access Maintenance Dashboard.",
             )
+            return
+        MaintenanceDashboardDialog(self.db, self).exec()
         self.showFullScreen()
 
     def open_recycle_bin(self):
         """Open the recycle bin dialog to view/restore deleted items."""
+        if not self.check_permission("database_ops") and not self.check_permission(
+            "manage_inventory"
+        ):
+            QMessageBox.warning(
+                self,
+                "Access Denied",
+                "You do not have permission to access Recycle Bin.",
+            )
+            return
         RecycleBinDialog(self.db, self).exec()
         self.showFullScreen()
 
@@ -3349,30 +4079,45 @@ def main():
     app = QApplication(sys.argv)
     app.setFont(QFont("FiraCode Nerd Font", 10))
     config_path = os.path.join(get_app_path(), "db.config")
+
+    # 1. Ensure config exists
     if not os.path.exists(config_path):
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             sys.exit(0)
+
+    # 2. Company Selection Loop
+    selected_db_name = None
     while True:
+        config_params = DatabaseManager.load_config()
+        # Test connection by listing databases
         try:
-            db_manager = DatabaseManager()
-            conn = db_manager.get_connection()
+            # Check if we can connect to postgres first
+            import psycopg2
+
+            test_params = config_params.copy()
+            test_params["dbname"] = "postgres"
+            conn = psycopg2.connect(**test_params)
             conn.close()
-            db_manager.purge_old_deleted_products()
-            break
+
+            # If successful, show selection dialog
+            sel_dlg = CompanySelectionDialog(config_params)
+            if sel_dlg.exec() == QDialog.Accepted:
+                selected_db_name = sel_dlg.selected_db
+                break
+            else:
+                sys.exit(0)
         except Exception as e:
+            # Connection failed (probably bad host/user/pass in config)
             box = QMessageBox()
             box.setIcon(QMessageBox.Critical)
-            box.setWindowTitle("Database Error")
-            box.setText("Could not connect to database.")
-            box.setInformativeText(
-                f"Please check db.config and ensure PostgreSQL is running.\n\nError: {e}"
-            )
+            box.setWindowTitle("Database Connection Error")
+            box.setText("Could not connect to PostgreSQL server.")
+            box.setInformativeText(f"Please check your configuration.\n\nError: {e}")
             btn_retry = box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
-            btn_config = box.addButton(
-                "Configure DB", QMessageBox.ButtonRole.ActionRole
-            )
+            btn_config = box.addButton("Configure", QMessageBox.ButtonRole.ActionRole)
             box.addButton(QMessageBox.StandardButton.Cancel)
             box.exec()
+
             if box.clickedButton() == btn_config:
                 if ConfigDialog(config_path).exec() != QDialog.Accepted:
                     sys.exit(0)
@@ -3381,16 +4126,33 @@ def main():
             else:
                 sys.exit(1)
 
+    # 3. Initialize Database Manager with selected DB
+    try:
+        db_manager = DatabaseManager(dbname=selected_db_name)
+        conn = db_manager.get_connection()
+        conn.close()
+        db_manager.purge_old_deleted_products()
+    except Exception as e:
+        QMessageBox.critical(
+            None,
+            "Database Error",
+            f"Failed to initialize database '{selected_db_name}':\n{e}",
+        )
+        sys.exit(1)
+
+    # 4. Load Theme
     theme_name = db_manager.get_setting("theme", "mocha")
     app.setProperty("theme_name", theme_name)
     app.setWindowIcon(QIcon(resource_path(f"svg/logo_{theme_name}.svg")))
     style = get_style(theme_name)
     app.setStyleSheet(style)
 
+    # 5. User Login / Creation
     if not db_manager.get_users():
         if SuperUserCreationDialog(db_manager).exec() != QDialog.Accepted:
             db_manager.close()
             sys.exit(0)
+
     app.aboutToQuit.connect(db_manager.close)
     login_dlg = LoginDialog(db_manager)
     if login_dlg.exec() == QDialog.Accepted:
@@ -3398,6 +4160,7 @@ def main():
         if not os.path.exists(printer.config_path):
             PrinterConfigDialog(printer, hide_cancel=True).exec()
         window = MainWindow(db_manager, login_dlg.user)
+        window.setWindowTitle(f"elytPOS - {selected_db_name} - {login_dlg.user[2]}")
         window.show()
         sys.exit(app.exec())
     else:

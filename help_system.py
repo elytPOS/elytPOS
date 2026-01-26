@@ -125,7 +125,7 @@ class HelpDialog(QDialog):
                     <ul>
                         <li><b>Quantity:</b> Navigate to the Qty column and type the new quantity.</li>
                         <li><b>UOM:</b> You can change the Unit of Measure (e.g., from Pcs to Box).</li>
-                        <li><b>MRP/Rate:</b> Select different MRPs from the dropdown if available.</li>
+                        <li><b>MRP Selection:</b> If an item has multiple MRPs, use the dropdown in the MRP column to select the correct one.</li>
                     </ul>
 
                     <h3 style='color: {c["danger"]};'>Keyboard Shortcuts (Hotkeys)</h3>
@@ -147,11 +147,30 @@ class HelpDialog(QDialog):
                     </table>
                 """,
             },
+            "multi_company": {
+                "title": "Multi-Company & FY",
+                "content": f"""
+                    <h2 style='color: {c["accent"]};'>Multi-Company Management</h2>
+                    <p>ElytPOS supports managing multiple businesses and financial years independently.</p>
+                    
+                    <h3 style='color: {c["success"]};'>Creating a Company</h3>
+                    <p>You can create a new company profile either at startup or via <b>Administration > Create Company / FY</b>.</p>
+                    <p>The setup wizard captures essential details like:</p>
+                    <ul>
+                        <li><b>General:</b> Company Name, Print Name, Financial Year.</li>
+                        <li><b>Address:</b> Location details used in receipts.</li>
+                        <li><b>Statutory:</b> GSTIN, PAN, and other tax details.</li>
+                    </ul>
+                    
+                    <h3 style='color: {c["warning"]};'>Switching Companies</h3>
+                    <p>To switch to a different company or a new financial year, simply restart the application. You will be presented with the Company Selection screen.</p>
+                """,
+            },
             "inventory": {
                 "title": "Inventory Management",
                 "content": f"""
                     <h2 style='color: {c["accent"]};'>Inventory Management</h2>
-                    <p>Access via <b>Administration > Item Master</b> (Ctrl+I).</p>
+                    <p>Access via <b>Masters > Item Master</b> (Ctrl+I).</p>
 
                     <h3 style='color: {c["success"]};'>Adding a New Product</h3>
                     <ol>
@@ -170,25 +189,46 @@ class HelpDialog(QDialog):
                     </ul>
                 """,
             },
+            "schemes": {
+                "title": "Schemes & Offers",
+                "content": f"""
+                    <h2 style='color: {c["accent"]};'>Schemes & Offers</h2>
+                    <p>Manage promotional campaigns via <b>Transactions > Schemes</b>.</p>
+                    
+                    <h3 style='color: {c["success"]};'>Creating a Scheme</h3>
+                    <ul>
+                        <li><b>Validity:</b> Set start and end dates for the offer.</li>
+                        <li><b>Rules:</b> Select an item and define criteria (Min Qty, Max Qty).</li>
+                        <li><b>Benefit Type:</b>
+                            <ul>
+                                <li><b>Percent (%):</b> Flat percentage discount (e.g., 10% Off).</li>
+                                <li><b>Flat Amt (Rs):</b> Fixed amount discount per unit.</li>
+                                <li><b>Fixed Rate:</b> Force item to sell at a specific absolute price.</li>
+                            </ul>
+                        </li>
+                    </ul>
+                """,
+            },
             "admin": {
                 "title": "Administration",
                 "content": f"""
-                    <h2 style='color: {c["accent"]};'>Administration & Maintenance</h2>
+                    <h2 style='color: {c["accent"]};'>Administration & Permissions</h2>
 
                     <h3 style='color: {c["success"]};'>User Management</h3>
-                    <p><b>User Master:</b> Create accounts for Staff, Managers, or Admins.</p>
+                    <p>Access via <b>Administration > User Master</b>.</p>
+                    <p>ElytPOS uses a <b>Granular Permission System</b>. While you can assign roles like Admin or Manager, you can also fine-tune specific rights:</p>
                     <ul>
-                        <li><b>Admin:</b> Full access to all features.</li>
-                        <li><b>Manager:</b> Access to inventory but restricted from maintenance.</li>
-                        <li><b>Staff:</b> Sales entry only.</li>
+                        <li><b>Billing & Sales:</b> Basic cashier access.</li>
+                        <li><b>Manage Inventory:</b> Allow item creation/editing.</li>
+                        <li><b>Database Ops:</b> Critical backup/restore functions.</li>
                     </ul>
 
                     <h3 style='color: {c["success"]};'>Maintenance</h3>
                     <p><b>Backup Database:</b> Always take regular backups via <i>Administration > Maintenance</i>.</p>
                     <p><b>Recycle Bin:</b> Deleted items stay here for 30 days before permanent removal.</p>
 
-                    <h3 style='color: {c["success"]};'>Printing</h3>
-                    <p>Configure your thermal printer in <b>Administration > Printer Settings</b>.</p>
+                    <h3 style='color: {c["success"]};'>Company Profile</h3>
+                    <p>Update your shop's address, contact info, or tax details anytime via <b>Administration > Modify Company</b>.</p>
                 """,
             },
         }
