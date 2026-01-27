@@ -24,6 +24,14 @@ class PooledConnection:
         """Delegate attribute access to the underlying connection."""
         return getattr(self.conn, name)
 
+    def __enter__(self):
+        """Support context manager protocol."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Return the connection to the pool on exit."""
+        self.close()
+
     def close(self):
         """Return the connection to the pool instead of closing it."""
         if self.conn:
@@ -249,7 +257,8 @@ class DatabaseManager:
                 max_qty DECIMAL(12, 3),
                 target_uom VARCHAR(20),
                 benefit_type VARCHAR(20) DEFAULT 'percent',
-                benefit_value DECIMAL(12, 3) DEFAULT 0
+                benefit_value DECIMAL(12, 3) DEFAULT 0,
+                mrp DECIMAL(12, 3)
             )
             """,
             """
@@ -1255,18 +1264,19 @@ class DatabaseManager:
     def add_scheme(self, name, valid_from, valid_to, items_data):
         """Add scheme."""
         conn = self.get_connection()
-        cur = conn.cursor()
         try:
+            cur = conn.cursor()
             cur.execute(
                 "INSERT INTO schemes (name, valid_from, valid_to) VALUES (%s, %s, %s) RETURNING id",
                 (name, valid_from, valid_to),
             )
             scheme_id = cur.fetchone()[0]
+
             for item in items_data:
                 cur.execute(
                     """INSERT INTO scheme_products
-                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value, mrp)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         scheme_id,
                         item["pid"],
@@ -1275,22 +1285,23 @@ class DatabaseManager:
                         item["target_uom"],
                         item["benefit_type"],
                         item["benefit_value"],
+                        item.get("mrp"),
                     ),
                 )
             conn.commit()
             return True
         except Exception as e:
+            conn.rollback()
             print(f"Error adding scheme: {e}")
             return False
         finally:
-            cur.close()
             conn.close()
 
     def update_scheme(self, scheme_id, name, valid_from, valid_to, items_data):
         """Update scheme."""
         conn = self.get_connection()
-        cur = conn.cursor()
         try:
+            cur = conn.cursor()
             cur.execute(
                 "UPDATE schemes SET name=%s, valid_from=%s, valid_to=%s WHERE id=%s",
                 (name, valid_from, valid_to, scheme_id),
@@ -1298,11 +1309,12 @@ class DatabaseManager:
             cur.execute(
                 "DELETE FROM scheme_products WHERE scheme_id = %s", (scheme_id,)
             )
+
             for item in items_data:
                 cur.execute(
                     """INSERT INTO scheme_products
-                       (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (scheme_id, product_id, min_qty, max_qty, target_uom, benefit_type, benefit_value, mrp)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         scheme_id,
                         item["pid"],
@@ -1311,6 +1323,7 @@ class DatabaseManager:
                         item["target_uom"],
                         item["benefit_type"],
                         item["benefit_value"],
+                        item.get("mrp"),
                     ),
                 )
             conn.commit()
@@ -1320,26 +1333,25 @@ class DatabaseManager:
             print(f"Error updating scheme: {e}")
             return False
         finally:
-            cur.close()
             conn.close()
 
     def get_scheme_rules(self, scheme_id):
         """Get scheme rules."""
-        conn = self.get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT p.id, p.name, p.barcode, sp.min_qty, sp.max_qty, sp.target_uom, sp.benefit_type, sp.benefit_value
-            FROM scheme_products sp
-            JOIN products p ON sp.product_id = p.id
-            WHERE sp.scheme_id = %s
-            """,
-            (scheme_id,),
-        )
-        rules = cur.fetchall()
-        cur.close()
-        conn.close()
-        return rules
+        try:
+            with self.get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """SELECT p.id, p.name, p.barcode, sp.min_qty, sp.max_qty,
+                           sp.target_uom, sp.benefit_type, sp.benefit_value, sp.mrp
+                    FROM scheme_products sp
+                    JOIN products p ON sp.product_id = p.id
+                    WHERE sp.scheme_id = %s""",
+                    (scheme_id,),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            print(f"Error getting scheme rules: {e}")
+            return []
 
     def get_schemes(self):
         """Get schemes."""
@@ -1361,32 +1373,42 @@ class DatabaseManager:
         conn.close()
         return schemes
 
-    def get_active_scheme_for_product(self, product_id, qty, uom=None):
+    def get_active_scheme_for_product(self, product_id, qty, uom=None, mrp=None):
         """Get active scheme for product."""
-        conn = self.get_connection()
-        cur = conn.cursor()
-        query = """
-            SELECT s.name, sp.benefit_value, sp.benefit_type, sp.target_uom
-            FROM schemes s
-            JOIN scheme_products sp ON s.id = sp.scheme_id
-            WHERE sp.product_id = %s
-              AND s.is_active = TRUE
-              AND %s >= sp.min_qty
-              AND (%s <= sp.max_qty OR sp.max_qty IS NULL)
-              AND CURRENT_DATE BETWEEN s.valid_from AND COALESCE(s.valid_to, '9999-12-31')
-              """
-        params = [product_id, qty, qty]
-        if uom:
-            query += " AND (sp.target_uom IS NULL OR sp.target_uom = %s) "
-            params.append(uom)
-        else:
-            query += " AND sp.target_uom IS NULL "
-        query += " ORDER BY sp.min_qty DESC, sp.benefit_value DESC LIMIT 1"
-        cur.execute(query, tuple(params))
-        scheme = cur.fetchone()
-        cur.close()
-        conn.close()
-        return scheme
+        try:
+            with self.get_connection() as conn:
+                cur = conn.cursor()
+                try:
+                    query = """
+                    SELECT s.name, sp.benefit_value, sp.benefit_type, sp.target_uom
+                    FROM schemes s
+                    JOIN scheme_products sp ON s.id = sp.scheme_id
+                    WHERE sp.product_id = %s
+                    AND s.is_active = TRUE
+                    AND s.valid_from <= CURRENT_DATE
+                    AND (s.valid_to IS NULL OR s.valid_to >= CURRENT_DATE)
+                    AND sp.min_qty <= %s
+                    AND (sp.max_qty IS NULL OR sp.max_qty >= %s)
+                    """
+                    params = [product_id, qty, qty]
+
+                    if uom:
+                        query += " AND (sp.target_uom IS NULL OR sp.target_uom = %s)"
+                        params.append(uom)
+
+                    if mrp is not None:
+                        query += " AND (sp.mrp IS NULL OR sp.mrp = %s)"
+                        params.append(mrp)
+
+                    query += " ORDER BY sp.min_qty DESC LIMIT 1"
+                    cur.execute(query, tuple(params))
+                    scheme = cur.fetchone()
+                    return scheme
+                finally:
+                    cur.close()
+        except Exception as e:
+            print(f"Error fetching scheme: {e}")
+            return None
 
     def delete_scheme(self, scheme_id):
         """Delete scheme."""
