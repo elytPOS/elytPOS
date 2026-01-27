@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
     QDialog,
+    QInputDialog,
     QFormLayout,
     QDoubleSpinBox,
     QFrame,
@@ -44,7 +45,7 @@ from PySide6.QtWidgets import (
 from database import DatabaseManager
 from printer import ReceiptPrinter
 from calculator_gui import CalculatorDialog
-from help_system import HelpDialog
+from help_system import HelpDialog, LicenseDialog
 import styles
 from styles import get_style, get_theme_colors, get_app_path
 from printer_config_dialog import PrinterConfigDialog
@@ -211,13 +212,10 @@ class RecycleBinDialog(QDialog):
 
 class SchemeEntryDialog(QDialog):
     """
-    Interface for creating and editing promotional schemes.
+    Interface for creating and editing promotional schemes with an Excel-style grid.
     """
 
     def __init__(self, db_manager, scheme_id=None, parent=None):
-        """
-        Initialize the scheme entry dialog, optionally loading an existing scheme for modification.
-        """
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         title = "Modify Scheme" if scheme_id else "Add New Scheme"
@@ -252,54 +250,34 @@ class SchemeEntryDialog(QDialog):
         header_layout.addWidget(QLabel("&To:"))
         header_layout.addWidget(self.valid_to)
         layout.addWidget(header_grp)
-        rule_grp = QGroupBox("Add Item Rule")
-        rule_layout = QHBoxLayout(rule_grp)
-        self.selected_rule_item = None
-        self.item_btn = QPushButton("Select &Item (F3)")
-        self.item_btn.setShortcut("F3")
-        self.item_btn.clicked.connect(self.select_rule_item)
-        self.item_label = QLabel("<No Item>")
-        self.item_label.setObjectName("info")
-        self.item_label.setMinimumWidth(150)
-        self.min_qty = QDoubleSpinBox()
-        self.min_qty.setValue(1.0)
-        self.min_qty.setPrefix("Min: ")
-        self.min_qty.setDecimals(3)
-        self.max_qty = QDoubleSpinBox()
-        self.max_qty.setMaximum(1000000)
-        self.max_qty.setPrefix("Max: ")
-        self.max_qty.setSpecialValueText("Max: ∞")
-        self.max_qty.setDecimals(3)
-        self.target_uom = QComboBox()
-        self.target_uom.addItems(["<All UOMs>"] + [u[1] for u in self.db.get_uoms()])
-        self.benefit_type = QComboBox()
-        self.benefit_type.addItems(["Percent (%)", "Flat Amt (Rs)", "Fixed Rate"])
-        self.benefit_value = QDoubleSpinBox()
-        self.benefit_value.setMaximum(1000000)
-        self.benefit_value.setDecimals(3)
-        add_rule_btn = QPushButton("&Add")
-        add_rule_btn.clicked.connect(self.add_rule_to_list)
-        add_rule_btn.setObjectName("btnSave")
-        rule_layout.addWidget(self.item_btn)
-        rule_layout.addWidget(self.item_label, 1)
-        rule_layout.addWidget(self.min_qty)
-        rule_layout.addWidget(self.max_qty)
-        rule_layout.addWidget(QLabel("&UOM:"))
-        rule_layout.addWidget(self.target_uom)
-        rule_layout.addWidget(QLabel("&Type:"))
-        rule_layout.addWidget(self.benefit_type)
-        rule_layout.addWidget(QLabel("&Value:"))
-        rule_layout.addWidget(self.benefit_value)
-        rule_layout.addWidget(add_rule_btn)
-        layout.addWidget(rule_grp)
+        table_ctrl_layout = QHBoxLayout()
+        add_row_btn = QPushButton("Add Row (F3)")
+        add_row_btn.clicked.connect(lambda: self._add_row_to_table())
+        add_row_btn.setObjectName("btnSave")
+        table_ctrl_layout.addWidget(add_row_btn)
+        table_ctrl_layout.addStretch()
+        layout.addLayout(table_ctrl_layout)
         self.items_list = QTableWidget()
-        self.items_list.setColumnCount(8)
+        self.items_list.setColumnCount(9)
         self.items_list.setHorizontalHeaderLabels(
-            ["Item Name", "ID", "Min Qty", "Max Qty", "UOM", "Type", "Value", "Action"]
+            [
+                "Item Name",
+                "ID",
+                "MRP",
+                "Min Qty",
+                "Max Qty",
+                "UOM",
+                "Type",
+                "Value",
+                "Action",
+            ]
         )
         self.items_list.setColumnHidden(1, True)
         self.items_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.items_list.setMinimumHeight(300)
+        self.items_list.setEditTriggers(QAbstractItemView.AllEditTriggers)
+        self.items_list.cellDoubleClicked.connect(self.on_cell_double_clicked)
+        self.items_list.installEventFilter(self)
         layout.addWidget(self.items_list)
         footer = QHBoxLayout()
         save_btn = QPushButton("&Save Scheme (F2)")
@@ -316,73 +294,93 @@ class SchemeEntryDialog(QDialog):
         main_layout.addWidget(scroll)
         if self.scheme_id:
             self.load_scheme_data()
+        else:
+            self._add_row_to_table()
         save_act = QAction(self)
         save_act.setShortcut("F2")
         save_act.triggered.connect(self.save_scheme)
         self.addAction(save_act)
+        add_row_act = QAction(self)
+        add_row_act.setShortcut("F3")
+        add_row_act.triggered.connect(lambda: self._add_row_to_table())
+        self.addAction(add_row_act)
         cancel_act = QAction(self)
         cancel_act.setShortcut("Esc")
         cancel_act.triggered.connect(self.close)
         self.addAction(cancel_act)
 
-    def select_rule_item(self):
-        """
-        Open product search and set selected item for a new scheme rule.
-        """
-        dlg = ProductSearchDialog(self.db, self)
-        if dlg.exec() == QDialog.Accepted:
-            self.selected_rule_item = dlg.selected_product
-            self.item_label.setText(
-                f"{self.selected_rule_item[1]} ({self.selected_rule_item[2]})"
-            )
+    def eventFilter(self, source, event):
+        if (
+            source is self.items_list
+            and event.type() == QEvent.KeyPress
+            and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+        ):
+            row = self.items_list.currentRow()
+            col = self.items_list.currentColumn()
+            if col == 0:
+                self.on_cell_double_clicked(row, col)
+                return True
+        return super().eventFilter(source, event)
 
-    def add_rule_to_list(self):
-        """
-        Extract rule parameters from inputs and add them to the rules table.
-        """
-        if not self.selected_rule_item:
-            return
-        self._add_row_to_table(
-            self.selected_rule_item[1],
-            self.selected_rule_item[0],
-            self.min_qty.value(),
-            self.max_qty.value(),
-            self.target_uom.currentText(),
-            self.benefit_type.currentIndex(),
-            self.benefit_value.value(),
-        )
-        self.selected_rule_item = None
-        self.item_label.setText("<No Item>")
+    def on_cell_double_clicked(self, row, column):
+        """Handle double click on item name column to open search."""
+        if column == 0:
+            dlg = ProductSearchDialog(self.db, self)
+            if dlg.exec() == QDialog.Accepted:
+                prod = dlg.selected_product
+                self.items_list.setItem(row, 0, QTableWidgetItem(prod[1]))
+                self.items_list.item(row, 0).setFlags(
+                    self.items_list.item(row, 0).flags() & ~Qt.ItemIsEditable
+                )
+                self.items_list.setItem(row, 1, QTableWidgetItem(str(prod[0])))
+                self.items_list.setItem(row, 2, QTableWidgetItem(f"{prod[3]:.3f}"))
 
-    def _add_row_to_table(self, pname, pid, min_q, max_q, uom, b_idx, val):
-        """
-        Helper to append a formatted rule row to the rules QTableWidget.
-        """
+    def _add_row_to_table(
+        self,
+        pname="",
+        pid="",
+        mrp=0.0,
+        min_q=1.0,
+        max_q=0.0,
+        uom="<All UOMs>",
+        b_idx=0,
+        val=0.0,
+    ):
+        """Helper to append an editable rule row to the rules table."""
         row = self.items_list.rowCount()
         self.items_list.insertRow(row)
-        self.items_list.setItem(row, 0, QTableWidgetItem(pname))
+        it_name = QTableWidgetItem(pname)
+        it_name.setFlags(it_name.flags() & ~Qt.ItemIsEditable)
+        it_name.setToolTip("Double-click to select item")
+        self.items_list.setItem(row, 0, it_name)
         self.items_list.setItem(row, 1, QTableWidgetItem(str(pid)))
-        self.items_list.setItem(row, 2, QTableWidgetItem(f"{min_q:.3f}"))
+        self.items_list.setItem(row, 2, QTableWidgetItem(f"{float(mrp or 0):.3f}"))
+        self.items_list.setItem(row, 3, QTableWidgetItem(f"{min_q:.3f}"))
         self.items_list.setItem(
-            row, 3, QTableWidgetItem(f"{max_q:.3f}" if max_q > 0 else "∞")
+            row, 4, QTableWidgetItem(f"{max_q:.3f}" if max_q > 0 else "∞")
         )
-        self.items_list.setItem(row, 4, QTableWidgetItem(uom))
-        b_type = (
-            "percent" if b_idx == 0 else "amount" if b_idx == 1 else "absolute_rate"
-        )
-        self.items_list.setItem(row, 5, QTableWidgetItem(b_type))
-        self.items_list.setItem(row, 6, QTableWidgetItem(f"{val:.3f}"))
+        uom_combo = QComboBox()
+        uoms = ["<All UOMs>"] + [u[1] for u in self.db.get_uoms()]
+        uom_combo.addItems(uoms)
+        if isinstance(uom, str):
+            idx = uom_combo.findText(uom)
+            if idx >= 0:
+                uom_combo.setCurrentIndex(idx)
+        self.items_list.setCellWidget(row, 5, uom_combo)
+        type_combo = QComboBox()
+        type_combo.addItems(["Percent (%)", "Flat Amt (Rs)", "Fixed Rate"])
+        type_combo.setCurrentIndex(b_idx)
+        self.items_list.setCellWidget(row, 6, type_combo)
+        self.items_list.setItem(row, 7, QTableWidgetItem(f"{val:.3f}"))
         del_btn = QPushButton("Del")
         del_btn.setObjectName("btnDelete")
         del_btn.clicked.connect(
             lambda: self.items_list.removeRow(self.items_list.currentRow())
         )
-        self.items_list.setCellWidget(row, 7, del_btn)
+        self.items_list.setCellWidget(row, 8, del_btn)
 
     def load_scheme_data(self):
-        """
-        Load existing scheme details and rules from the database into the UI.
-        """
+        """Load existing scheme details and rules from the database into the UI."""
         header = next(
             (s for s in self.db.get_schemes() if s[0] == self.scheme_id), None
         )
@@ -397,6 +395,7 @@ class SchemeEntryDialog(QDialog):
             self._add_row_to_table(
                 r[1],
                 r[0],
+                float(r[8]) if r[8] is not None else 0.0,
                 float(r[3]),
                 float(r[4]) if r[4] else 0,
                 r[5] or "<All UOMs>",
@@ -405,32 +404,54 @@ class SchemeEntryDialog(QDialog):
             )
 
     def save_scheme(self):
-        """
-        Validate and save the current scheme and its rules to the database.
-        """
+        """Validate and save the current scheme and its rules to the database."""
         name = self.scheme_name.text()
-        if not name or self.items_list.rowCount() == 0:
+        if not name:
+            QMessageBox.warning(self, "Error", "Scheme name is required.")
             return
         items_data = []
         for r in range(self.items_list.rowCount()):
-            items_data.append(
-                {
-                    "pid": int(self.items_list.item(r, 1).text()),
-                    "min_qty": float(self.items_list.item(r, 2).text()),
-                    "max_qty": (
-                        float(self.items_list.item(r, 3).text())
-                        if self.items_list.item(r, 3).text() != "∞"
-                        else None
-                    ),
-                    "target_uom": (
-                        None
-                        if self.items_list.item(r, 4).text() == "<All UOMs>"
-                        else self.items_list.item(r, 4).text()
-                    ),
-                    "benefit_type": self.items_list.item(r, 5).text(),
-                    "benefit_value": float(self.items_list.item(r, 6).text()),
-                }
+            pid_item = self.items_list.item(r, 1)
+            if not pid_item or not pid_item.text() or pid_item.text() == "None":
+                continue
+
+            mrp_item = self.items_list.item(r, 2)
+            uom_widget = self.items_list.cellWidget(r, 5)
+            uom_val = uom_widget.currentText() if uom_widget else "<All UOMs>"
+            type_widget = self.items_list.cellWidget(r, 6)
+            type_idx = type_widget.currentIndex() if type_widget else 0
+            b_type = (
+                "percent"
+                if type_idx == 0
+                else "amount"
+                if type_idx == 1
+                else "absolute_rate"
             )
+            try:
+                items_data.append(
+                    {
+                        "pid": int(pid_item.text()),
+                        "mrp": float(mrp_item.text())
+                        if mrp_item and mrp_item.text()
+                        else None,
+                        "min_qty": float(self.items_list.item(r, 3).text()),
+                        "max_qty": (
+                            float(self.items_list.item(r, 4).text())
+                            if self.items_list.item(r, 4).text() != "∞"
+                            else None
+                        ),
+                        "target_uom": (None if uom_val == "<All UOMs>" else uom_val),
+                        "benefit_type": b_type,
+                        "benefit_value": float(self.items_list.item(r, 7).text()),
+                    }
+                )
+            except (ValueError, AttributeError):
+                continue
+        if not items_data:
+            QMessageBox.warning(
+                self, "Error", "At least one valid item rule is required."
+            )
+            return
         v_from, v_to = (
             self.valid_from.date().toPython(),
             self.valid_to.date().toPython(),
@@ -1157,7 +1178,7 @@ class CompanySelectionDialog(QDialog):
                 self.create_company()
 
     def create_company(self):
-        dlg = CreateCompanyDialog(self.config_params, self)
+        dlg = CreateCompanyDialog(config_params=self.config_params, parent=self)
         if dlg.exec() == QDialog.Accepted:
             self.load_databases()
             # Select the new one
@@ -1217,10 +1238,12 @@ class LoginDialog(QDialog):
         login_btn.setObjectName("btnSave")
         login_btn.clicked.connect(self.login)
         layout.addWidget(login_btn)
-        copyright_label = QLabel("© 2026 Mohammed Adnan. All rights reserved.")
+        
+        copyright_label = QLabel("© 2026 Mohammed Adnan\nGPLv3 License")
         copyright_label.setObjectName("copyright")
         copyright_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(copyright_label)
+        
         self.setFixedWidth(400)
 
     def login(self):
@@ -2076,7 +2099,7 @@ class ConfigDialog(QDialog):
         form.addRow("Host:", self.host)
         form.addRow("Port:", self.port)
         layout.addLayout(form)
-        save_btn = QPushButton("Save & Connect")
+        save_btn = QPushButton("Save && &Connect")
         save_btn.setFixedHeight(50)
         save_btn.setObjectName("btnSave")
         save_btn.clicked.connect(self.save_config)
@@ -2733,6 +2756,7 @@ class SalesHistoryDialog(QDialog):
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setDefaultSectionSize(40)  # Increased row height
         layout.addWidget(self.table)
         self.load_history()
         close_btn = QPushButton("&Close (Esc)")
@@ -2845,10 +2869,15 @@ class ExcelTable(QTableWidget):
         )
         header = self.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
+        # Barcode fixed width
+        self.setColumnWidth(0, 160)
+        # Item Name stretches to fill available space
         header.setSectionResizeMode(1, QHeaderView.Stretch)
+        # Numeric columns fixed width
         for i in [2, 3, 4, 5, 6, 7]:
-            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        self.setColumnWidth(0, 180)
+            self.setColumnWidth(i, 80)
+
+        self.verticalHeader().setDefaultSectionSize(35)  # Taller rows
         self.setRowCount(20)
         self.nav_order = [0, 2, 3, 5]
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
@@ -3312,42 +3341,64 @@ class MainWindow(QMainWindow):
         help_action.setShortcut("F1")
         help_action.triggered.connect(self.open_help)
         help_menu.addAction(help_action)
+        
+        license_action = QAction("&License", self)
+        license_action.triggered.connect(self.open_license)
+        help_menu.addAction(license_action)
 
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        header_row = QHBoxLayout()
-        sales_grp = QGroupBox("Sales Entry")
-        s_layout = QHBoxLayout(sales_grp)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # --- Top Bar: Date | Bill No | Customer Lookup ---
+        top_bar = QFrame()
+        top_bar.setObjectName("header-frame")
+        top_layout = QHBoxLayout(top_bar)
+        top_layout.setContentsMargins(10, 5, 10, 5)
+
+        # Date & Bill info
         self.date_edit = QDateEdit()
         self.date_edit.setDisplayFormat("dd-MM-yyyy")
         self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setCalendarPopup(True)
-        self.bill_no_label = QLabel("Bill No: <New>")
-        s_layout.addWidget(QLabel("Date:"))
-        s_layout.addWidget(self.date_edit)
-        s_layout.addWidget(self.bill_no_label)
-        s_layout.addStretch()
-        header_row.addWidget(sales_grp, 1)
-        cust_grp = QGroupBox("Customer Details")
-        c_layout = QHBoxLayout(cust_grp)
+        self.date_edit.setCalendarPopup(False)
+        self.date_edit.setFixedWidth(120)
+        self.bill_no_label = QLabel("<b>NEW</b>")
+        self.bill_no_label.setStyleSheet("color: green; font-size: 14px;")
+
+        top_layout.addWidget(QLabel("Date:"))
+        top_layout.addWidget(self.date_edit)
+        top_layout.addSpacing(20)
+        top_layout.addWidget(QLabel("Bill No:"))
+        top_layout.addWidget(self.bill_no_label)
+        top_layout.addStretch()
+
+        # Customer Lookup
         self.cust_mobile_input = QLineEdit()
-        self.cust_mobile_input.setPlaceholderText("Mobile No (Lookup)")
-        self.cust_mobile_input.setFixedWidth(180)
+        self.cust_mobile_input.setPlaceholderText("Customer Mobile / ID")
+        self.cust_mobile_input.setFixedWidth(200)
         self.cust_mobile_input.returnPressed.connect(self.handle_customer_lookup)
-        self.cust_name_label = QLabel("Name: <Cash>")
-        self.cust_mobile_label = QLabel("Mob: -")
-        self.selected_customer_data = None
-        self.cust_search_btn = QPushButton("Search")
+
+        self.cust_search_btn = QPushButton()
+        self.cust_search_btn.setIcon(QIcon.fromTheme("edit-find"))
+        self.cust_search_btn.setToolTip("Search Customer")
         self.cust_search_btn.clicked.connect(self.open_customer_search)
-        c_layout.addWidget(QLabel("Lookup:"))
-        c_layout.addWidget(self.cust_mobile_input)
-        c_layout.addWidget(self.cust_search_btn)
-        c_layout.addWidget(self.cust_name_label)
-        c_layout.addWidget(self.cust_mobile_label)
-        c_layout.addStretch()
-        header_row.addWidget(cust_grp, 2)
-        layout.addLayout(header_row)
+
+        self.cust_name_label = QLabel("Walk-in Customer")
+        self.cust_name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.cust_mobile_label = QLabel("")
+        self.selected_customer_data = None
+
+        top_layout.addWidget(QLabel("Customer:"))
+        top_layout.addWidget(self.cust_mobile_input)
+        top_layout.addWidget(self.cust_search_btn)
+        top_layout.addSpacing(10)
+        top_layout.addWidget(self.cust_name_label)
+        top_layout.addWidget(self.cust_mobile_label)
+
+        layout.addWidget(top_bar)
+
         self.grid = ExcelTable()
         self.grid.itemChanged.connect(self.handle_grid_change)
         layout.addWidget(self.grid)
@@ -3434,19 +3485,12 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_help(self):
-        """Open the interactive help system dialog."""
+        """Open the help and documentation dialog."""
         HelpDialog(self).exec()
-        self.showFullScreen()
 
-    def open_inventory(self):
-        """Open the Item Master / Inventory management dialog."""
-        if not self.check_permission("manage_inventory"):
-            QMessageBox.warning(
-                self, "Access Denied", "You do not have permission to manage Inventory."
-            )
-            return
-        InventoryDialog(self.db, self).exec()
-        self.showFullScreen()
+    def open_license(self):
+        """Open the license dialog."""
+        LicenseDialog(self).exec()
 
     def open_scheme_entry(self, sid=None):
         """Open the dialog to create or edit a promotional scheme."""
@@ -3455,7 +3499,16 @@ class MainWindow(QMainWindow):
                 self, "Access Denied", "You do not have permission to manage Schemes."
             )
             return
-        SchemeEntryDialog(self.db, sid, self).exec()
+
+        if sid is None:
+            name, ok = QInputDialog.getText(self, "New Scheme", "Enter Scheme Name:")
+            if not ok or not name.strip():
+                return
+            dlg = SchemeEntryDialog(self.db, sid, self)
+            dlg.scheme_name.setText(name)
+            dlg.exec()
+        else:
+            SchemeEntryDialog(self.db, sid, self).exec()
         self.showFullScreen()
 
     def open_scheme_list(self, mode):
@@ -3499,6 +3552,16 @@ class MainWindow(QMainWindow):
         PurchaseEntryDialog(self.db, self).exec()
         self.showFullScreen()
 
+    def open_inventory(self):
+        """Open the Item Master / Inventory management dialog."""
+        if not self.check_permission("manage_inventory"):
+            QMessageBox.warning(
+                self, "Access Denied", "You do not have permission to manage Inventory."
+            )
+            return
+        InventoryDialog(self.db, self).exec()
+        self.showFullScreen()
+
     def open_uom_master(self):
         """Open the Units of Measure management dialog."""
         if not self.check_permission("manage_inventory"):
@@ -3528,7 +3591,7 @@ class MainWindow(QMainWindow):
                 self, "Access Denied", "You do not have permission to Create Companies."
             )
             return
-        CreateCompanyDialog(self.db.conn_params, parent=self).exec()
+        CreateCompanyDialog(config_params=self.db.conn_params, parent=self).exec()
         self.showFullScreen()
 
     def open_modify_company(self):
@@ -3688,18 +3751,22 @@ class MainWindow(QMainWindow):
         """
         self.reset_grid()
         self.current_sale_id = sid
-        self.bill_no_label.setText(f"Bill No: {sid} [EDIT MODE]")
+        self.bill_no_label.setText(f"<b>{sid}</b> [EDIT MODE]")
         self.bill_no_label.setObjectName("info")
         self.bill_no_label.style().unpolish(self.bill_no_label)
         self.bill_no_label.style().polish(self.bill_no_label)
         sales = self.db.get_sales_history(query=str(sid))
         sale_header = next((s for s in sales if str(s[0]) == str(sid)), None)
-        if sale_header and sale_header[5]:
-            customer = self.db.get_customer_by_mobile(sale_header[5])
-            if customer:
-                self.selected_customer_data = customer
-                self.cust_name_label.setText(f"Name: {customer[1]}")
-                self.cust_mobile_label.setText(f"Mob: {customer[2]}")
+        if sale_header:
+            if sale_header[1]:
+                self.date_edit.setDate(sale_header[1].date())
+
+            if sale_header[5]:
+                customer = self.db.get_customer_by_mobile(sale_header[5])
+                if customer:
+                    self.selected_customer_data = customer
+                    self.cust_name_label.setText(f"Name: {customer[1]}")
+                    self.cust_mobile_label.setText(f"Mob: {customer[2]}")
         items = self.db.get_sale_items(sid)
         self.grid.setRowCount(len(items) + 1)
         self.updating_cell = True
@@ -3710,8 +3777,13 @@ class MainWindow(QMainWindow):
                 self.grid.setItem(row, 1, QTableWidgetItem(item["name"]))
                 self.grid.setItem(row, 2, QTableWidgetItem(str(item["quantity"])))
                 self.grid.setItem(row, 3, QTableWidgetItem(item["uom"]))
-                uom_data = self.db.get_product_uom_data(prod[0], item["uom"])
-                mrp = uom_data["mrp"] if uom_data else prod[3]
+
+                # Use stored MRP if available, else fallback to current master
+                mrp = item.get("mrp")
+                if not mrp:
+                    uom_data = self.db.get_product_uom_data(prod[0], item["uom"])
+                    mrp = uom_data["mrp"] if uom_data else prod[3]
+
                 self.update_mrp_dropdown(row, prod[0], item["uom"], mrp)
                 self.grid.setItem(row, 5, QTableWidgetItem(f"{item['price']:.3f}"))
                 self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
@@ -3783,7 +3855,7 @@ class MainWindow(QMainWindow):
         qty = str(product[9]) if len(product) > 9 else "1.0"
         self.grid.setItem(row, 2, QTableWidgetItem(qty))
         self.grid.setItem(row, 3, QTableWidgetItem(product[6]))
-        self.update_mrp_dropdown(row, product[0], product[5], product[3])
+        self.update_mrp_dropdown(row, product[0], product[6], product[3])
         self.grid.setItem(row, 5, QTableWidgetItem(f"{product[4]:.3f}"))
         self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
         self.grid.item(row, 1).setData(Qt.UserRole, product)
@@ -3815,7 +3887,9 @@ class MainWindow(QMainWindow):
         if data:
             self.updating_cell = True
             try:
-                self.grid.setItem(row, 5, QTableWidgetItem(f"{data['price']:.3f}"))
+                # Update the rate item if a specific price is attached to this MRP
+                if data.get("price") and data["price"] > 0:
+                    self.grid.setItem(row, 5, QTableWidgetItem(f"{data['price']:.3f}"))
             finally:
                 self.updating_cell = False
             self.recalc_row(row)
@@ -3836,15 +3910,29 @@ class MainWindow(QMainWindow):
                 uom_item.text() if uom_item else None,
                 float(rate_item.text()) if rate_item else 0.0,
             )
+
+            mrp = 0.0
+            mrp_combo = self.grid.cellWidget(row, 4)
+            if mrp_combo:
+                try:
+                    mrp = float(mrp_combo.currentText())
+                except ValueError:
+                    mrp = 0.0
+
             name_item = self.grid.item(row, 1)
             if name_item and name_item.data(Qt.UserRole):
                 p_data = list(name_item.data(Qt.UserRole))
-                if uom and uom != p_data[5]:
+
+                # If mrp was not set by combo, use from p_data
+                if mrp == 0 and len(p_data) > 3:
+                    mrp = float(p_data[3])
+
+                if uom and uom != p_data[6]:
                     uom_data = self.db.get_product_uom_data(p_data[0], uom)
                     if uom_data:
                         rate = uom_data["price"]
                         mrp = uom_data["mrp"]
-                        p_data[5], p_data[7], p_data[4], p_data[3] = (
+                        p_data[6], p_data[7], p_data[4], p_data[3] = (
                             uom_data["uom"],
                             uom_data["factor"],
                             uom_data["price"],
@@ -3868,7 +3956,7 @@ class MainWindow(QMainWindow):
                     qty * effective_rate,
                     0.0,
                 )
-                scheme = self.db.get_active_scheme_for_product(p_data[0], qty, uom)
+                scheme = self.db.get_active_scheme_for_product(p_data[0], qty, uom, mrp)
                 if scheme:
                     s_val, s_type, s_uom = float(scheme[1]), scheme[2], scheme[3]
                     if s_uom and uom != s_uom:
@@ -3876,7 +3964,7 @@ class MainWindow(QMainWindow):
                         self.grid.setItem(row, 3, QTableWidgetItem(uom))
                         uom_data = self.db.get_product_uom_data(p_data[0], uom)
                         if uom_data:
-                            p_data[6], p_data[8], p_data[4], p_data[3] = (
+                            p_data[6], p_data[7], p_data[4], p_data[3] = (
                                 uom_data["uom"],
                                 uom_data["factor"],
                                 uom_data["price"],

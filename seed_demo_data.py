@@ -7,7 +7,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from datetime import datetime, timedelta
 from database import DatabaseManager
 from PySide6.QtWidgets import QApplication, QDialog
-from main import ConfigDialog
+from main import ConfigDialog, CompanySelectionDialog
 
 
 def create_db_if_missing(config_path):
@@ -18,6 +18,7 @@ def create_db_if_missing(config_path):
         return
 
     db_params = config["postgresql"]
+    # We use a default db name for initial check if not specified in config
     dbname = db_params.get("dbname", "elytpos_db")
     user = db_params.get("user", "elytpos_user")
     password = db_params.get("password", "elytpos_password")
@@ -38,7 +39,7 @@ def create_db_if_missing(config_path):
 
         if not exists:
             print(f"Database '{dbname}' not found. Creating...")
-            cur.execute(f"CREATE DATABASE {dbname} OWNER {user}")
+            cur.execute(f'CREATE DATABASE "{dbname}" OWNER "{user}"')
             print(f"Database '{dbname}' created successfully.")
         else:
             print(f"Database '{dbname}' already exists.")
@@ -57,16 +58,27 @@ def main():
     else:
         application_path = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(application_path, "db.config")
+
+    # Ensure config exists
     if not os.path.exists(config_path):
         print("db.config not found. Opening Setup...")
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             print("Setup cancelled.")
             sys.exit(0)
 
-    create_db_if_missing(config_path)
+    # Load connection parameters
+    config_params = DatabaseManager.load_config()
 
-    db = DatabaseManager()
-    print("Seeding demo data...")
+    # Use selection GUI
+    sel_dlg = CompanySelectionDialog(config_params)
+    if sel_dlg.exec() == QDialog.Accepted:
+        selected_db = sel_dlg.selected_db
+    else:
+        print("Selection cancelled.")
+        sys.exit(0)
+
+    db = DatabaseManager(dbname=selected_db)
+    print(f"Seeding demo data into '{selected_db}'...")
 
     db.add_user("admin", "admin123", "Super Administrator", "admin")
     db.add_user("cashier1", "cash123", "John Cashier", "staff")
@@ -98,6 +110,9 @@ def main():
         ("Maggi Noodles 70g", "8901234003", 14.0, 12.0, "Snacks", "pcs"),
         ("Coca Cola 500ml", "8901234004", 40.0, 35.0, "Beverages", "pcs"),
         ("Basmati Rice", "8901234005", 120.0, 110.0, "Grocery", "kg"),
+        ("Washing Powder 1kg", "8901234006", 150.0, 140.0, "Household", "pcs"),
+        ("Sunlight Soap", "8901234007", 30.0, 28.0, "Household", "pcs"),
+        ("Pepsodent 150g", "8901234008", 95.0, 90.0, "Personal Care", "pcs"),
     ]
     p_ids = []
     for name, barcode, mrp, price, cat, uom in products_data:
@@ -108,11 +123,18 @@ def main():
                 pid = res[0]
         p_ids.append(pid)
 
-    p1, p2, p3, p4, p5 = p_ids
+    p1, p2, p3, p4, p5, p6, p7, p8 = p_ids
     print("Products seeded.")
 
     if p5:
         db.add_alias(p5, "8901234005-5", "kg", 580.0, 540.0, 5.0, 5.0)
+
+    # Add multiple MRP aliases for Maggi
+    if p3:
+        # Original is 14 MRP
+        db.add_alias(p3, "MAGGI15", "pcs", 15.0, 13.0, 1.0, 1.0)
+        db.add_alias(p3, "MAGGI16", "pcs", 16.0, 14.0, 1.0, 1.0)
+
     print("Aliases seeded.")
 
     if p1 and hindi_id:
@@ -122,18 +144,37 @@ def main():
     print("Translations seeded.")
 
     db.add_scheme(
-        "Maggi Bulk Offer",
+        "Maggi Matrix Offer",
         datetime.now().date(),
         (datetime.now() + timedelta(days=30)).date(),
         [
             {
                 "pid": p3,
+                "mrp": 14.0,
                 "min_qty": 5.0,
                 "max_qty": None,
                 "target_uom": "pcs",
                 "benefit_type": "percent",
                 "benefit_value": 10.0,
-            }
+            },
+            {
+                "pid": p3,
+                "mrp": 15.0,
+                "min_qty": 1.0,
+                "max_qty": None,
+                "target_uom": "pcs",
+                "benefit_type": "percent",
+                "benefit_value": 8.0,
+            },
+            {
+                "pid": p3,
+                "mrp": 16.0,
+                "min_qty": 1.0,
+                "max_qty": None,
+                "target_uom": "pcs",
+                "benefit_type": "percent",
+                "benefit_value": 5.0,
+            },
         ],
     )
     print("Schemes seeded.")
@@ -157,6 +198,9 @@ def main():
         (p3, "Maggi Noodles 70g", "8901234003", 12.0, 14.0, "pcs"),
         (p4, "Coca Cola 500ml", "8901234004", 35.0, 40.0, "pcs"),
         (p5, "Basmati Rice", "8901234005", 110.0, 120.0, "kg"),
+        (p6, "Washing Powder 1kg", "8901234006", 140.0, 150.0, "pcs"),
+        (p7, "Sunlight Soap", "8901234007", 28.0, 30.0, "pcs"),
+        (p8, "Pepsodent 150g", "8901234008", 90.0, 95.0, "pcs"),
     ]
 
     for day in range(7, -1, -1):
