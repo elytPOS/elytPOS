@@ -34,7 +34,7 @@
 
 ## 🔐 Security & Roles
 
-elytPOS features a robust **Role-Based Access Control (RBAC)** system with three distinct roles: **Admin**, **Manager**, and **Staff**.
+elytPOS features a robust **Role-Based Access Control (RBAC)** system with three distinct roles: **Admin**, **Manager**, and **Cashier**.
 
 For a detailed breakdown of permissions, see [USER_ROLES.md](user_roles.md).
 
@@ -116,15 +116,12 @@ If you prefer to run the application using Python:
 
 | Shortcut | Action |
 | :--- | :--- |
-| **F2** | Save / Checkout / Record Purchase |
-| **F3** | Smart Product Search |
-| **F4** | Clear Current Entry |
+| **F2** | Quick Checkout (Save & Print) |
+| **F3** | Customer Search |
+| **F4** | Clear Current Bill |
 | **F5** | View Sales History |
-| **F6** | Hold Current Bill |
-| **F7** | Recall Held Bill |
-| **F8** | Open Integrated Calculator |
-| **Ctrl + I** | Item Master (Inventory) |
-| **Esc** | Close Dialog / Exit Application |
+| **F10** | Smart Product Search |
+| **Esc** | Exit/Close Window |
 
 ## 📜 License
 

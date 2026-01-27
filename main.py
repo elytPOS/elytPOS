@@ -9,37 +9,37 @@ import subprocess
 from PySide6.QtCore import Qt, QDate, QEvent, QTimer
 from PySide6.QtGui import QFont, QAction, QKeyEvent, QPixmap, QIcon
 from PySide6.QtWidgets import (
-    QApplication,
+    QDateEdit,
+    QComboBox,
+    QStyledItemDelegate,
     QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
+    QPushButton,
     QLabel,
     QLineEdit,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
-    QAbstractItemView,
-    QMessageBox,
-    QDialog,
-    QInputDialog,
-    QFormLayout,
-    QDoubleSpinBox,
-    QFrame,
-    QGroupBox,
-    QDateEdit,
-    QAbstractSpinBox,
-    QComboBox,
-    QStyledItemDelegate,
     QListWidget,
     QListWidgetItem,
     QScrollArea,
-    QFileDialog,
-    QTabWidget,
-    QTextEdit,
-    QCheckBox,
+    QFormLayout,
     QGridLayout,
+    QMenu,
+    QMenuBar,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QFrame,
+    QGroupBox,
+    QTabWidget,
+    QWidget,
+    QTextEdit,
+    QApplication,
+    QFileDialog,
+    QInputDialog,
+    QAbstractItemView,
+    QCheckBox,
 )
 
 from database import DatabaseManager
@@ -65,37 +65,55 @@ def resource_path(relative_path):
 
 class ProductSearchDialog(QDialog):
     """
-    Search and select products from database.
+    Enhanced full-screen product search and selection interface.
     """
 
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setWindowTitle("Search &Item")
+        self.setWindowTitle("Product Selection")
         self.db = db_manager
         self.selected_product = None
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
+
         layout = QVBoxLayout(self)
+
+        title_lbl = QLabel("Product Search")
+        title_lbl.setObjectName("title")
+        layout.addWidget(title_lbl)
+
+        search_box = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Type Name or Alias to Search...")
+        self.search_input.setPlaceholderText(
+            "Type Name, Barcode, or Alias to Search (Esc to cancel)..."
+        )
+        self.search_input.setFixedHeight(50)
+        self.search_input.setStyleSheet("font-size: 18pt; padding: 5px;")
         self.search_input.textChanged.connect(self.load_products)
-        layout.addWidget(self.search_input)
+        search_box.addWidget(self.search_input)
+
+        layout.addLayout(search_box)
+
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
-            ["Name", "Barcode", "MRP", "Price", "Base UOM"]
+            ["Name", "Barcode", "MRP", "Rate", "UOM", "Category"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setDefaultSectionSize(45)
         self.table.doubleClicked.connect(self.select_product)
         layout.addWidget(self.table)
+
+        help_lbl = QLabel(
+            "Use <b>Up/Down</b> to navigate, <b>Enter</b> to select, <b>Esc</b> to close."
+        )
+        layout.addWidget(help_lbl)
+
         self.load_products()
-        close_btn = QPushButton("&Close (Esc)")
-        close_btn.clicked.connect(self.reject)
-        layout.addWidget(close_btn)
         self.search_input.setFocus()
         self.search_input.installEventFilter(self)
 
@@ -103,7 +121,8 @@ class ProductSearchDialog(QDialog):
         if event.type() == QEvent.KeyPress and source is self.search_input:
             if event.key() == Qt.Key_Down:
                 self.table.setFocus()
-                self.table.selectRow(0)
+                if self.table.rowCount() > 0:
+                    self.table.selectRow(0)
                 return True
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                 if self.table.rowCount() > 0:
@@ -121,27 +140,23 @@ class ProductSearchDialog(QDialog):
             super().keyPressEvent(event)
 
     def load_products(self):
-        """
-        Fetch products from database based on search query and update table.
-        """
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
         products = (
             self.db.search_products(query) if query else self.db.get_all_products()
         )
+
         self.table.setRowCount(0)
         for row, prod in enumerate(products):
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(prod[1] or "")))
-            self.table.setItem(row, 1, QTableWidgetItem(str(prod[2] or "")))
-            self.table.setItem(row, 2, QTableWidgetItem(str(prod[3] or "0.0")))
-            self.table.setItem(row, 3, QTableWidgetItem(str(prod[4] or "0.0")))
-            self.table.setItem(row, 4, QTableWidgetItem(str(prod[6] or "pcs")))
+            self.table.setItem(row, 0, QTableWidgetItem(str(prod[1])))
+            self.table.setItem(row, 1, QTableWidgetItem(str(prod[2])))
+            self.table.setItem(row, 2, QTableWidgetItem(f"{float(prod[3]):.2f}"))
+            self.table.setItem(row, 3, QTableWidgetItem(f"{float(prod[4]):.2f}"))
+            self.table.setItem(row, 4, QTableWidgetItem(str(prod[6])))
+            self.table.setItem(row, 5, QTableWidgetItem(str(prod[5])))
             self.table.item(row, 0).setData(Qt.UserRole, prod)
 
     def select_product(self):
-        """
-        Get the product data from the currently selected row and accept dialog.
-        """
         row = self.table.currentRow()
         if row >= 0:
             self.selected_product = self.table.item(row, 0).data(Qt.UserRole)
@@ -224,39 +239,46 @@ class SchemeEntryDialog(QDialog):
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
+
         main_layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        content_widget = QWidget()
-        layout = QVBoxLayout(content_widget)
-        layout.setSpacing(10)
-        header_grp = QGroupBox("Scheme Header")
-        header_layout = QHBoxLayout(header_grp)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+
+        header_frame = QFrame()
+        header_frame.setObjectName("header-frame")
+        h_layout = QHBoxLayout(header_frame)
+        h_layout.setContentsMargins(15, 10, 15, 10)
+
         self.scheme_name = QLineEdit()
-        self.scheme_name.setPlaceholderText("Scheme Name")
+        self.scheme_name.setPlaceholderText("Scheme Name (e.g. Diwali Dhamaka)")
+        self.scheme_name.setFixedHeight(40)
+        self.scheme_name.setStyleSheet("font-size: 14pt; font-weight: bold;")
+
         self.valid_from = QDateEdit()
         self.valid_from.setDisplayFormat("dd-MM-yyyy")
         self.valid_from.setDate(QDate.currentDate())
         self.valid_from.setCalendarPopup(True)
+        self.valid_from.setFixedHeight(40)
+
         self.valid_to = QDateEdit()
         self.valid_to.setDisplayFormat("dd-MM-yyyy")
         self.valid_to.setDate(QDate.currentDate().addDays(365))
         self.valid_to.setCalendarPopup(True)
-        header_layout.addWidget(QLabel("&Name:"))
-        header_layout.addWidget(self.scheme_name, 1)
-        header_layout.addWidget(QLabel("Valid &From:"))
-        header_layout.addWidget(self.valid_from)
-        header_layout.addWidget(QLabel("&To:"))
-        header_layout.addWidget(self.valid_to)
-        layout.addWidget(header_grp)
-        table_ctrl_layout = QHBoxLayout()
-        add_row_btn = QPushButton("Add Row (F3)")
-        add_row_btn.clicked.connect(lambda: self._add_row_to_table())
-        add_row_btn.setObjectName("btnSave")
-        table_ctrl_layout.addWidget(add_row_btn)
-        table_ctrl_layout.addStretch()
-        layout.addLayout(table_ctrl_layout)
+        self.valid_to.setFixedHeight(40)
+
+        h_layout.addWidget(QLabel("<b>SCHEME NAME:</b>"))
+        h_layout.addWidget(self.scheme_name, 1)
+        h_layout.addSpacing(20)
+        h_layout.addWidget(QLabel("<b>VALID FROM:</b>"))
+        h_layout.addWidget(self.valid_from)
+        h_layout.addSpacing(10)
+        h_layout.addWidget(QLabel("<b>TO:</b>"))
+        h_layout.addWidget(self.valid_to)
+
+        main_layout.addWidget(header_frame)
+
+        grid_container = QVBoxLayout()
+        grid_container.setContentsMargins(0, 10, 0, 10)
+
         self.items_list = QTableWidget()
         self.items_list.setColumnCount(9)
         self.items_list.setHorizontalHeaderLabels(
@@ -274,66 +296,82 @@ class SchemeEntryDialog(QDialog):
         )
         self.items_list.setColumnHidden(1, True)
         self.items_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.items_list.setMinimumHeight(300)
+        self.items_list.verticalHeader().setDefaultSectionSize(40)
         self.items_list.setEditTriggers(QAbstractItemView.AllEditTriggers)
-        self.items_list.cellDoubleClicked.connect(self.on_cell_double_clicked)
+        self.items_list.itemChanged.connect(self.handle_item_change)
+        self.items_list.setItemDelegateForColumn(
+            0, FuzzyCompleterDelegate(self.db, self.items_list)
+        )
         self.items_list.installEventFilter(self)
-        layout.addWidget(self.items_list)
+        grid_container.addWidget(self.items_list)
+
+        main_layout.addLayout(grid_container)
+
         footer = QHBoxLayout()
-        save_btn = QPushButton("&Save Scheme (F2)")
+        save_btn = QPushButton("SAVE SCHEME (F2)")
         save_btn.clicked.connect(self.save_scheme)
         save_btn.setObjectName("btnSave")
-        cancel_btn = QPushButton("&Cancel (Esc)")
+        save_btn.setFixedHeight(50)
+        save_btn.setMinimumWidth(200)
+
+        cancel_btn = QPushButton("CANCEL (Esc)")
         cancel_btn.clicked.connect(self.close)
         cancel_btn.setObjectName("btnCancel")
+        cancel_btn.setFixedHeight(50)
+
         footer.addStretch()
         footer.addWidget(save_btn)
         footer.addWidget(cancel_btn)
-        layout.addLayout(footer)
-        scroll.setWidget(content_widget)
-        main_layout.addWidget(scroll)
+        main_layout.addLayout(footer)
+
         if self.scheme_id:
             self.load_scheme_data()
         else:
             self._add_row_to_table()
-        save_act = QAction(self)
-        save_act.setShortcut("F2")
-        save_act.triggered.connect(self.save_scheme)
-        self.addAction(save_act)
-        add_row_act = QAction(self)
-        add_row_act.setShortcut("F3")
-        add_row_act.triggered.connect(lambda: self._add_row_to_table())
-        self.addAction(add_row_act)
-        cancel_act = QAction(self)
-        cancel_act.setShortcut("Esc")
-        cancel_act.triggered.connect(self.close)
-        self.addAction(cancel_act)
+
+        s_f2 = QAction(self)
+        s_f2.setShortcut("F2")
+        s_f2.triggered.connect(self.save_scheme)
+        self.addAction(s_f2)
+
+        s_esc = QAction(self)
+        s_esc.setShortcut("Esc")
+        s_esc.triggered.connect(self.close)
+        self.addAction(s_esc)
 
     def eventFilter(self, source, event):
-        if (
-            source is self.items_list
-            and event.type() == QEvent.KeyPress
-            and event.key() in (Qt.Key_Return, Qt.Key_Enter)
-        ):
-            row = self.items_list.currentRow()
-            col = self.items_list.currentColumn()
-            if col == 0:
-                self.on_cell_double_clicked(row, col)
+        if source is self.items_list and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                row, col = self.items_list.currentRow(), self.items_list.currentColumn()
+                if col == 0:
+                    self.items_list.setCurrentCell(row, 3)
+                elif col < 7:
+                    self.items_list.setCurrentCell(row, col + 1)
+                else:
+                    if row == self.items_list.rowCount() - 1:
+                        self._add_row_to_table()
+                    self.items_list.setCurrentCell(row + 1, 0)
                 return True
         return super().eventFilter(source, event)
 
-    def on_cell_double_clicked(self, row, column):
-        """Handle double click on item name column to open search."""
-        if column == 0:
-            dlg = ProductSearchDialog(self.db, self)
-            if dlg.exec() == QDialog.Accepted:
-                prod = dlg.selected_product
-                self.items_list.setItem(row, 0, QTableWidgetItem(prod[1]))
-                self.items_list.item(row, 0).setFlags(
-                    self.items_list.item(row, 0).flags() & ~Qt.ItemIsEditable
-                )
+    def handle_item_change(self, item):
+        if item.column() == 0:
+            row = item.row()
+            text = item.text().strip()
+            if not text:
+                return
+
+            prod = item.data(Qt.UserRole)
+            if not prod:
+                prod = self.db.find_product_smart(text)
+
+            if prod:
+                self.items_list.blockSignals(True)
                 self.items_list.setItem(row, 1, QTableWidgetItem(str(prod[0])))
-                self.items_list.setItem(row, 2, QTableWidgetItem(f"{prod[3]:.3f}"))
+                self.items_list.setItem(
+                    row, 2, QTableWidgetItem(f"{float(prod[3]):.3f}")
+                )
+                self.items_list.blockSignals(False)
 
     def _add_row_to_table(
         self,
@@ -346,7 +384,6 @@ class SchemeEntryDialog(QDialog):
         b_idx=0,
         val=0.0,
     ):
-        """Helper to append an editable rule row to the rules table."""
         row = self.items_list.rowCount()
         self.items_list.insertRow(row)
         it_name = QTableWidgetItem(pname)
@@ -380,7 +417,6 @@ class SchemeEntryDialog(QDialog):
         self.items_list.setCellWidget(row, 8, del_btn)
 
     def load_scheme_data(self):
-        """Load existing scheme details and rules from the database into the UI."""
         header = next(
             (s for s in self.db.get_schemes() if s[0] == self.scheme_id), None
         )
@@ -404,7 +440,6 @@ class SchemeEntryDialog(QDialog):
             )
 
     def save_scheme(self):
-        """Validate and save the current scheme and its rules to the database."""
         name = self.scheme_name.text()
         if not name:
             QMessageBox.warning(self, "Error", "Scheme name is required.")
@@ -776,7 +811,6 @@ class CreateCompanyDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Header
         header = QLabel(
             "Modify Company Information" if self.is_modify else "Company Information"
         )
@@ -787,7 +821,6 @@ class CreateCompanyDialog(QDialog):
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
 
-        # --- Tab 1: General Info ---
         self.tab_general = QWidget()
         gen_layout = QFormLayout(self.tab_general)
 
@@ -795,7 +828,6 @@ class CreateCompanyDialog(QDialog):
         self.print_name_input = QLineEdit()
         self.short_name_input = QLineEdit()
 
-        # Financial Year Logic
         self.fy_from = QDateEdit()
         self.fy_from.setDisplayFormat("dd-MM-yyyy")
         self.fy_from.setDate(
@@ -814,7 +846,6 @@ class CreateCompanyDialog(QDialog):
         gen_layout.addRow("Financial Year From:", self.fy_from)
         gen_layout.addRow("Books Commencing From:", self.books_from)
 
-        # Auto-fill print name
         self.name_input.textChanged.connect(
             lambda t: self.print_name_input.setText(t)
             if not self.print_name_input.isModified()
@@ -823,7 +854,6 @@ class CreateCompanyDialog(QDialog):
 
         self.tabs.addTab(self.tab_general, "General")
 
-        # --- Tab 2: Address & Contact ---
         self.tab_address = QWidget()
         addr_layout = QFormLayout(self.tab_address)
 
@@ -883,7 +913,6 @@ class CreateCompanyDialog(QDialog):
 
         self.tabs.addTab(self.tab_address, "Address/Contact")
 
-        # --- Tab 3: Statutory Details ---
         self.tab_statutory = QWidget()
         stat_layout = QFormLayout(self.tab_statutory)
 
@@ -899,7 +928,6 @@ class CreateCompanyDialog(QDialog):
 
         self.tabs.addTab(self.tab_statutory, "Statutory")
 
-        # --- Tab 4: Currency ---
         self.tab_currency = QWidget()
         curr_layout = QFormLayout(self.tab_currency)
 
@@ -913,7 +941,6 @@ class CreateCompanyDialog(QDialog):
 
         self.tabs.addTab(self.tab_currency, "Currency")
 
-        # Footer Buttons
         btn_layout = QHBoxLayout()
         save_btn_text = (
             "Update Company (F2)" if self.is_modify else "Create Company (F2)"
@@ -936,15 +963,12 @@ class CreateCompanyDialog(QDialog):
 
         if self.is_modify:
             self.load_existing_data()
-            # Disable FY fields if modifying (usually not changed once created in BusyWin)
             self.fy_from.setEnabled(False)
             self.books_from.setEnabled(False)
 
         self.name_input.setFocus()
 
     def load_existing_data(self):
-        """Fetch current settings from database."""
-
         def get(k):
             return self.db.get_setting(k, "")
 
@@ -990,7 +1014,6 @@ class CreateCompanyDialog(QDialog):
             self.create_new()
 
     def update_existing(self):
-        """Update current database settings."""
         try:
 
             def save(k, v):
@@ -999,7 +1022,6 @@ class CreateCompanyDialog(QDialog):
             save("company_name", self.name_input.text())
             save("print_name", self.print_name_input.text())
             save("short_name", self.short_name_input.text())
-            # FY usually not updated
 
             save("address", self.address_input.toPlainText())
             save("country", self.country_input.text())
@@ -1100,7 +1122,6 @@ class CompanySelectionDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Logo
         self.splash_label = QLabel()
         theme = QApplication.instance().property("theme_name") or "mocha"
         pixmap = QPixmap(resource_path(f"svg/logo_{theme}.svg"))
@@ -1146,7 +1167,6 @@ class CompanySelectionDialog(QDialog):
         self.list_widget.clear()
         dbs = DatabaseManager.list_databases(self.config_params)
         for db in dbs:
-            # Parse elytpos_name_fy
             parts = db.split("_")
             display_text = db
             if len(parts) >= 3:
@@ -1161,7 +1181,6 @@ class CompanySelectionDialog(QDialog):
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
         else:
-            # Auto-prompt to create if none exist
             QTimer.singleShot(200, self.prompt_create_first_company)
 
     def prompt_create_first_company(self):
@@ -1181,7 +1200,6 @@ class CompanySelectionDialog(QDialog):
         dlg = CreateCompanyDialog(config_params=self.config_params, parent=self)
         if dlg.exec() == QDialog.Accepted:
             self.load_databases()
-            # Select the new one
             for i in range(self.list_widget.count()):
                 if self.list_widget.item(i).data(Qt.UserRole) == dlg.created_db_name:
                     self.list_widget.setCurrentRow(i)
@@ -1238,12 +1256,12 @@ class LoginDialog(QDialog):
         login_btn.setObjectName("btnSave")
         login_btn.clicked.connect(self.login)
         layout.addWidget(login_btn)
-        
-        copyright_label = QLabel("© 2026 Mohammed Adnan\nGPLv3 License")
+
+        copyright_label = QLabel("© 2026 Mohammed Adnan\nUnder GPLv3 License")
         copyright_label.setObjectName("copyright")
         copyright_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(copyright_label)
-        
+
         self.setFixedWidth(400)
 
     def login(self):
@@ -1347,7 +1365,6 @@ class UserMasterDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Form Area
         form_widget = QWidget()
         form_layout = QVBoxLayout(form_widget)
 
@@ -1358,7 +1375,7 @@ class UserMasterDialog(QDialog):
         self.password.setPlaceholderText("(Leave blank to keep existing)")
         self.full_name = QLineEdit()
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["staff", "manager", "admin"])
+        self.role_combo.addItems(["cashier", "manager", "admin"])
         self.role_combo.currentTextChanged.connect(self.on_role_change)
 
         input_form.addRow("Username:", self.username)
@@ -1368,12 +1385,10 @@ class UserMasterDialog(QDialog):
 
         form_layout.addLayout(input_form)
 
-        # Permissions Group
         self.perm_grp = QGroupBox("Granular Permissions")
         p_layout = QGridLayout(self.perm_grp)
         self.check_boxes = {}
 
-        # Define available permissions
         self.perm_keys = [
             ("billing", "Billing & Sales"),
             ("view_reports", "View Reports/History"),
@@ -1414,7 +1429,6 @@ class UserMasterDialog(QDialog):
         form_layout.addLayout(btn_layout)
         layout.addWidget(form_widget)
 
-        # User List
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
@@ -1432,9 +1446,8 @@ class UserMasterDialog(QDialog):
         self.load_users()
 
     def on_role_change(self, role):
-        """Auto-select default permissions based on role."""
         defaults = {
-            "staff": ["billing", "view_reports"],
+            "cashier": ["billing", "view_reports"],
             "manager": [
                 "billing",
                 "view_reports",
@@ -1445,10 +1458,6 @@ class UserMasterDialog(QDialog):
             ],
             "admin": [k[0] for k in self.perm_keys if k != "separator"],
         }
-
-        # Only apply defaults if we are essentially resetting (basic heuristic)
-        # For better UX, maybe we shouldn't overwrite manual changes unless explicitly asked.
-        # But for simplicity, let's set them when role changes.
 
         targets = defaults.get(role, [])
         for key, cb in self.check_boxes.items():
@@ -1462,34 +1471,14 @@ class UserMasterDialog(QDialog):
         role = self.role_combo.currentText()
         pwd = self.password.text()
 
-        # If updating existing user and pwd is blank, we need to handle that.
-        # Database.add_user hashes password. If we pass empty, it hashes empty.
-        # We need to fetch existing user to keep password if empty?
-        # Actually add_user upserts.
-        # The current db.add_user implementation always hashes the password passed.
-        # We might need to modify db.add_user or handle it here.
-        # For now, let's require password for new users, and if empty for existing, we might need a workaround.
-        # A simple workaround: If password is empty, don't update it?
-        # But add_user does ON CONFLICT UPDATE SET ... (without password logic).
-        # We can just require password for now or modify DB logic later.
-        # Let's enforce password for simplicity in this iteration.
-
         if not pwd and not self.is_editing_mode():
             QMessageBox.warning(self, "Error", "Password required for new user.")
             return
 
-        # Collect perms
         perms = {k: cb.isChecked() for k, cb in self.check_boxes.items()}
 
-        # Logic for password update:
-        # If we use add_user, it will overwrite password hash.
-        # If pwd is empty, we shouldn't call add_user like that if we want to preserve old pwd.
-        # Let's assume for this feature, you set password every time you save.
         if not pwd:
             QMessageBox.information(self, "Info", "Password not changed.")
-            # This means we can't use add_user easily to update just perms without password.
-            # I should probably update add_user in database.py to handle None password.
-            # For this step, let's assume password is provided.
             return
 
         if self.db.add_user(username, pwd, self.full_name.text(), role, perms):
@@ -1498,7 +1487,6 @@ class UserMasterDialog(QDialog):
             QMessageBox.information(self, "Success", "User saved.")
 
     def is_editing_mode(self):
-        # Check if username exists in table
         current = self.username.text()
         for r in range(self.table.rowCount()):
             if self.table.item(r, 0).text() == current:
@@ -1507,10 +1495,6 @@ class UserMasterDialog(QDialog):
 
     def load_selected_user(self, item):
         row = item.row()
-        # username = self.table.item(row, 0).text() # Unused
-        # We need to fetch full details including permissions
-        # Database.get_users returns permissions now.
-        # But load_users populates the table.
         user_data = self.table.item(row, 0).data(Qt.UserRole)
 
         self.username.setText(user_data[1])
@@ -1535,7 +1519,7 @@ class UserMasterDialog(QDialog):
         self.password.clear()
         self.full_name.clear()
         self.role_combo.setCurrentIndex(0)
-        self.on_role_change("staff")  # Reset perms
+        self.on_role_change("cashier")  # Reset perms
 
     def load_users(self):
         self.table.setRowCount(0)
@@ -1976,7 +1960,7 @@ class PurchaseEntryDialog(QDialog):
             self.save_purchase()
         elif event.key() == Qt.Key_Escape:
             self.close()
-        elif event.key() == Qt.Key_F3:
+        elif event.key() == Qt.Key_F10:
             self.open_search_dialog()
         else:
             super().keyPressEvent(event)
@@ -2119,7 +2103,6 @@ class ConfigDialog(QDialog):
             "host": self.host.text(),
             "port": self.port.text(),
         }
-        # Test connection using default 'postgres' database
         test_params = params.copy()
         test_params["dbname"] = "postgres"
         try:
@@ -2136,6 +2119,11 @@ class ConfigDialog(QDialog):
         config["postgresql"] = params
         with open(self.config_path, "w", encoding="utf-8") as configfile:
             config.write(configfile)
+
+        import crypto_utils
+
+        crypto_utils.encrypt_file(self.config_path)
+
         self.accept()
 
     def keyPressEvent(self, event):
@@ -2408,311 +2396,406 @@ class MaintenanceDashboardDialog(QDialog):
             super().keyPressEvent(event)
 
 
+class ItemTranslationDialog(QDialog):
+    """
+    Interface for managing product name translations in multiple languages.
+    """
+
+    def __init__(self, db, product_id, product_name, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setWindowTitle(f"Translations: {product_name}")
+        self.db, self.product_id = db, product_id
+        self.showFullScreen()
+
+        layout = QVBoxLayout(self)
+        title = QLabel(f"Manage Translations: {product_name}")
+        title.setObjectName("title")
+        layout.addWidget(title)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        self.form = QFormLayout(content)
+        self.inputs = {}
+
+        langs = self.db.get_languages()
+        cur_trans = self.db.get_translations(product_id)
+        trans_map = {t[0]: t[2] for t in cur_trans}
+
+        for lid, lname, lcode in langs:
+            le = QLineEdit(trans_map.get(lid, ""))
+            le.setPlaceholderText(f"Name in {lname}")
+            self.inputs[lid] = le
+            self.form.addRow(f"{lname} ({lcode}):", le)
+
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save (F2)")
+        save_btn.clicked.connect(self.save)
+        save_btn.setObjectName("btnSave")
+        close_btn = QPushButton("Close (Esc)")
+        close_btn.clicked.connect(self.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        save_act = QAction(self)
+        save_act.setShortcut("F2")
+        save_act.triggered.connect(self.save)
+        self.addAction(save_act)
+
+        esc_act = QAction(self)
+        esc_act.setShortcut("Esc")
+        esc_act.triggered.connect(self.reject)
+        self.addAction(esc_act)
+
+    def save(self):
+        for lid, le in self.inputs.items():
+            val = le.text().strip()
+            self.db.add_translation(self.product_id, lid, val)
+        self.accept()
+
+
 class InventoryDialog(QDialog):
     """
-    Main interface for adding and editing inventory items.
+    Structured Item Master workflow:
+    1. Search/Create Item (Name + Translations)
+    2. Define Variants in Excel-like grid
     """
 
     def __init__(self, db_manager, parent=None):
-        """
-        Initialize the inventory management dialog and load supporting data.
-        """
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setWindowTitle("Item Master (Add/Edit)")
+        self.setWindowTitle("Item Master")
         self.db = db_manager
-        self.current_product_id = None
-        self.uom_data_list = self.db.get_uoms()
-        self.uom_display_list = [
-            f"{u[1]} ({u[2]})" if u[2] else u[1] for u in self.uom_data_list
-        ]
-        self.uom_name_list = [u[1] for u in self.uom_data_list]
+        self.current_item_id = None
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
+
         main_layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        content_widget = QWidget()
-        layout = QVBoxLayout(content_widget)
-        top_layout = QHBoxLayout()
-        search_btn = QPushButton("&Find Item (F3)")
-        search_btn.clicked.connect(self.open_search)
-        clear_btn = QPushButton("&New Item")
-        clear_btn.clicked.connect(self.clear_form)
-        self.reg_btn = QPushButton("&Purchase Register")
-        self.reg_btn.clicked.connect(self.open_purchase_register)
-        self.reg_btn.setVisible(False)
-        top_layout.addWidget(search_btn)
-        top_layout.addWidget(clear_btn)
-        top_layout.addWidget(self.reg_btn)
-        top_layout.addStretch()
-        layout.addLayout(top_layout)
-        grp = QGroupBox("Base Item Details")
-        form_layout = QFormLayout(grp)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+
+        header_frame = QFrame()
+        header_frame.setObjectName("header-frame")
+        h_layout = QVBoxLayout(header_frame)
+
+        item_info_row = QHBoxLayout()
         self.name_input = QLineEdit()
-        self.barcode_input = QLineEdit()
-        self.mrp_input = QDoubleSpinBox()
-        self.mrp_input.setMaximum(100000)
-        self.mrp_input.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.mrp_input.setDecimals(3)
-        self.price_input = QDoubleSpinBox()
-        self.price_input.setMaximum(100000)
-        self.price_input.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.price_input.setDecimals(4)
-        self.category_input = QLineEdit()
-        self.base_uom_input = QComboBox()
-        self.base_uom_input.addItems(self.uom_display_list)
-        self.base_uom_input.setEditable(True)
-        form_layout.addRow("Item &Name:", self.name_input)
-        form_layout.addRow("Base &Barcode:", self.barcode_input)
-        form_layout.addRow("&MRP:", self.mrp_input)
-        form_layout.addRow("Base &Rate:", self.price_input)
-        form_layout.addRow("Base &UOM:", self.base_uom_input)
-        form_layout.addRow("&Category:", self.category_input)
-        layout.addWidget(grp)
-        self.alias_grp = QGroupBox("Alternate Units / Aliases")
-        self.alias_grp.setEnabled(False)
-        alias_layout = QVBoxLayout(self.alias_grp)
-        add_alias_layout = QHBoxLayout()
-        self.alias_barcode = QLineEdit()
-        self.alias_uom = QComboBox()
-        self.alias_uom.addItems(self.uom_display_list)
-        self.alias_uom.setEditable(True)
-        self.alias_mrp = QDoubleSpinBox()
-        self.alias_mrp.setMaximum(1000000)
-        self.alias_mrp.setDecimals(3)
-        self.alias_mrp.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.alias_price = QDoubleSpinBox()
-        self.alias_price.setMaximum(1000000)
-        self.alias_price.setDecimals(4)
-        self.alias_price.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.alias_factor = QDoubleSpinBox()
-        self.alias_factor.setMaximum(1000000)
-        self.alias_factor.setDecimals(3)
-        self.alias_factor.setValue(1.0)
-        self.alias_factor.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.alias_qty = QDoubleSpinBox()
-        self.alias_qty.setMaximum(1000000)
-        self.alias_qty.setDecimals(3)
-        self.alias_qty.setValue(1.0)
-        self.alias_qty.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        self.alias_factor.valueChanged.connect(self.auto_calc_alias_price)
-        self.price_input.valueChanged.connect(self.auto_calc_alias_price)
-        self.alias_factor.valueChanged.connect(self.auto_calc_alias_mrp)
-        self.mrp_input.valueChanged.connect(self.auto_calc_alias_mrp)
-        add_alias_btn = QPushButton("Add &Alias")
-        add_alias_btn.clicked.connect(self.add_alias)
-        add_alias_layout.addWidget(QLabel("Barcode:"))
-        add_alias_layout.addWidget(self.alias_barcode)
-        add_alias_layout.addWidget(QLabel("UOM:"))
-        add_alias_layout.addWidget(self.alias_uom)
-        add_alias_layout.addWidget(QLabel("MRP:"))
-        add_alias_layout.addWidget(self.alias_mrp)
-        add_alias_layout.addWidget(QLabel("Rate:"))
-        add_alias_layout.addWidget(self.alias_price)
-        add_alias_layout.addWidget(QLabel("Factor:"))
-        add_alias_layout.addWidget(self.alias_factor)
-        add_alias_layout.addWidget(QLabel("Qty:"))
-        add_alias_layout.addWidget(self.alias_qty)
-        add_alias_layout.addWidget(add_alias_btn)
-        alias_layout.addLayout(add_alias_layout)
-        self.alias_table = QTableWidget()
-        self.alias_table.setColumnCount(7)
-        self.alias_table.setHorizontalHeaderLabels(
-            ["Barcode", "UOM", "MRP", "Rate", "Factor", "Qty", "Action"]
+        self.name_input.setPlaceholderText("Item Name (e.g. Maggi Noodles)")
+        self.name_input.setFixedHeight(40)
+        self.name_input.setStyleSheet("font-size: 14pt; font-weight: bold;")
+
+        self.search_btn = QPushButton(" Find Item (F10) ")
+        self.search_btn.setFixedHeight(40)
+        self.search_btn.clicked.connect(self.open_product_search)
+
+        self.trans_btn = QPushButton(" Translations ")
+        self.trans_btn.setFixedHeight(40)
+        self.trans_btn.clicked.connect(self.open_translations)
+        self.trans_btn.setEnabled(False)
+
+        item_info_row.addWidget(QLabel("<b>ITEM NAME:</b>"))
+        item_info_row.addWidget(self.name_input, 1)
+        item_info_row.addWidget(self.search_btn)
+        item_info_row.addWidget(self.trans_btn)
+        h_layout.addLayout(item_info_row)
+
+        main_layout.addWidget(header_frame)
+
+        grid_container = QVBoxLayout()
+        grid_container.setContentsMargins(0, 10, 0, 10)
+
+        self.grid = QTableWidget()
+        self.grid.setColumnCount(11)
+        self.grid.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Main Barcode",
+                "Other Aliases/Shortcodes",
+                "UOM",
+                "MRP",
+                "Selling Rate",
+                "Purchase Price",
+                "Factor",
+                "Quantity",
+                "Category",
+                "Action",
+            ]
         )
-        self.alias_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.alias_table.setMinimumHeight(200)
-        alias_layout.addWidget(self.alias_table)
-        layout.addWidget(self.alias_grp)
-        scroll.setWidget(content_widget)
-        main_layout.addWidget(scroll)
-        btn_layout = QHBoxLayout()
-        self.save_btn = QPushButton("&Save Base Item (F2)")
-        self.save_btn.clicked.connect(self.save_product)
+        self.grid.setColumnHidden(0, True)
+        self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.grid.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.grid.verticalHeader().setDefaultSectionSize(40)
+        self.grid.installEventFilter(self)
+        grid_container.addWidget(self.grid)
+
+        main_layout.addLayout(grid_container)
+
+        footer = QHBoxLayout()
+        self.status_lbl = QLabel("Ready")
+        self.status_lbl.setStyleSheet("font-weight: bold; color: #666;")
+
+        self.save_btn = QPushButton("SAVE EVERYTHING (F2)")
+        self.save_btn.clicked.connect(self.save_everything)
         self.save_btn.setObjectName("btnSave")
-        self.del_btn = QPushButton("&Delete Item")
-        self.del_btn.clicked.connect(self.confirm_delete)
-        self.del_btn.setObjectName("btnCancel")
-        self.del_btn.setVisible(False)
-        close_btn = QPushButton("&Close (Esc)")
+        self.save_btn.setFixedHeight(50)
+        self.save_btn.setMinimumWidth(200)
+
+        close_btn = QPushButton("CLOSE (Esc)")
         close_btn.clicked.connect(self.close)
         close_btn.setObjectName("btnCancel")
-        btn_layout.addWidget(self.del_btn)
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.save_btn)
-        btn_layout.addWidget(close_btn)
-        main_layout.addLayout(btn_layout)
-        save_act = QAction(self)
-        save_act.setShortcut("F2")
-        save_act.triggered.connect(self.save_product)
-        self.addAction(save_act)
-        find_act = QAction(self)
-        find_act.setShortcut("F3")
-        find_act.triggered.connect(self.open_search)
-        self.addAction(find_act)
+        close_btn.setFixedHeight(50)
 
-    def keyPressEvent(self, event):
-        """
-        Handle function keys and escape for the inventory dialog.
-        """
-        if event.key() == Qt.Key_F2:
-            self.save_product()
-        elif event.key() == Qt.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
+        footer.addWidget(self.status_lbl)
+        footer.addStretch()
+        footer.addWidget(self.save_btn)
+        footer.addWidget(close_btn)
+        main_layout.addLayout(footer)
 
-    def open_search(self):
-        """
-        Open the item search dialog and load the selected product.
-        """
+        self.add_empty_variant_row()
+
+        s_f2 = QAction(self)
+        s_f2.setShortcut("F2")
+        s_f2.triggered.connect(self.save_everything)
+        self.addAction(s_f2)
+
+        s_f10 = QAction(self)
+        s_f10.setShortcut("F10")
+        s_f10.triggered.connect(self.open_product_search)
+        self.addAction(s_f10)
+
+        s_esc = QAction(self)
+        s_esc.setShortcut("Esc")
+        s_esc.triggered.connect(self.close)
+        self.addAction(s_esc)
+
+    def _get_text(self, row, col):
+        it = self.grid.item(row, col)
+        return it.text().strip() if it else ""
+
+    def open_product_search(self):
         dlg = ProductSearchDialog(self.db, self)
-        res = dlg.exec()
+        if dlg.exec() == QDialog.Accepted:
+            prod = dlg.selected_product
+            self.current_item_id = prod[0]
+            self.name_input.setText(prod[1])
+            self.trans_btn.setEnabled(True)
+            self.load_variants()
         self.showFullScreen()
-        if res == QDialog.Accepted:
-            self.load_product(dlg.selected_product)
 
-    def load_product(self, prod):
-        """
-        Populate the form fields with data from an existing product.
-        """
-        self.current_product_id = prod[0]
-        self.name_input.setText(prod[1])
-        self.barcode_input.setText(prod[2])
-        self.mrp_input.setValue(float(prod[3]))
-        self.price_input.setValue(float(prod[4]))
-        self.category_input.setText(prod[5] or "")
-        self.base_uom_input.setCurrentText(prod[6] or "pcs")
-        self.save_btn.setText("Update Base Item (F2)")
-        self.alias_grp.setEnabled(True)
-        self.load_aliases()
-        self.del_btn.setVisible(True)
-        self.reg_btn.setVisible(True)
+    def load_variants(self):
+        self.grid.setRowCount(0)
+        p = self.db.get_product_by_id(self.current_item_id)
+        if p:
+            self.add_variant_to_grid(p, is_base=True)
+        aliases = self.db.get_aliases(self.current_item_id)
+        for a in aliases:
+            self.add_variant_to_grid(a, is_base=False)
+        self.add_empty_variant_row()
+        self.status_lbl.setText(f"Loaded item: {p[1]}")
 
-    def open_purchase_register(self):
-        """
-        Open the purchase history view for the current item.
-        """
-        if self.current_product_id:
-            PurchaseRegisterDialog(
-                self.db, self.current_product_id, self.name_input.text(), self
+    def add_variant_to_grid(self, data, is_base=True):
+        row = self.grid.rowCount()
+        self.grid.insertRow(row)
+        self.grid.setItem(row, 0, QTableWidgetItem(str(data[0])))
+        self.grid.setItem(row, 1, QTableWidgetItem(str(data[2])))  # barcode
+        self.grid.setItem(
+            row, 2, QTableWidgetItem(str(data[7 if is_base else 7] or ""))
+        )  # aliases
+        self.grid.setItem(row, 3, QTableWidgetItem(str(data[6 if is_base else 2])))
+        self.grid.setItem(
+            row, 4, QTableWidgetItem(f"{float(data[3 if is_base else 3]):.2f}")
+        )
+        self.grid.setItem(
+            row, 5, QTableWidgetItem(f"{float(data[4 if is_base else 4]):.2f}")
+        )
+        self.grid.setItem(
+            row, 6, QTableWidgetItem(f"{float(data[8 if is_base else 8]):.2f}")
+        )
+        self.grid.setItem(
+            row, 7, QTableWidgetItem(f"{float(1.0 if is_base else data[5]):.3f}")
+        )
+        self.grid.setItem(
+            row, 8, QTableWidgetItem(f"{float(data[9] if is_base else 1.0):.2f}")
+        )
+        self.grid.setItem(row, 9, QTableWidgetItem(str(data[5] if is_base else "")))
+        d_btn = QPushButton("Del")
+        d_btn.setObjectName("btnDelete")
+        if is_base:
+            d_btn.setEnabled(False)
+        d_btn.clicked.connect(self.handle_delete_variant)
+        self.grid.setCellWidget(row, 10, d_btn)
+
+    def add_empty_variant_row(self):
+        row = self.grid.rowCount()
+        self.grid.insertRow(row)
+        for c in range(10):
+            self.grid.setItem(row, c, QTableWidgetItem(""))
+        self.grid.item(row, 4).setText("0.00")
+        self.grid.item(row, 5).setText("0.00")
+        self.grid.item(row, 6).setText("0.00")
+        self.grid.item(row, 7).setText("1.000")
+        self.grid.item(row, 8).setText("1.00")
+
+    def handle_delete_variant(self):
+        btn = self.sender()
+        if btn:
+            row = self.grid.indexAt(btn.pos()).row()
+            self.grid.removeRow(row)
+
+    def open_translations(self):
+        if self.current_item_id:
+            ItemTranslationDialog(
+                self.db, self.current_item_id, self.name_input.text(), self
             ).exec()
             self.showFullScreen()
 
-    def confirm_delete(self):
-        """
-        Move the current product to the recycle bin after user confirmation.
-        """
-        if not self.current_product_id:
+    def save_everything(self):
+        item_name = self.name_input.text().strip()
+        if not item_name:
+            QMessageBox.warning(self, "Error", "Item Name is required.")
             return
-        msg = (
-            f"Are you sure you want to move '{self.name_input.text()}' to Recycle Bin?"
-        )
-        if (
-            QMessageBox.question(
-                self, "Confirm Delete", msg, QMessageBox.Yes | QMessageBox.No
+        try:
+            r0 = 0
+            if self.grid.rowCount() == 0:
+                self.add_empty_variant_row()
+
+            barcode = self._get_text(r0, 1)
+            aliases_str = self._get_text(r0, 2)
+            uom = self._get_text(r0, 3) or "pcs"
+            mrp = float(self._get_text(r0, 4) or 0)
+            rate = float(self._get_text(r0, 5) or 0)
+            pur = float(self._get_text(r0, 6) or 0)
+            load_qty = float(self._get_text(r0, 8) or 1.0)
+            cat = self._get_text(r0, 9) or "General"
+
+            all_input_barcodes = set()
+            if barcode:
+                all_input_barcodes.add(barcode)
+            for a in aliases_str.split(","):
+                a = a.strip()
+                if a:
+                    if a in all_input_barcodes:
+                        QMessageBox.warning(
+                            self, "Error", f"Duplicate alias found in input: {a}"
+                        )
+                        return
+                    all_input_barcodes.add(a)
+
+            for b in all_input_barcodes:
+                collision = self.db.check_alias_exists(
+                    b, exclude_product_id=self.current_item_id
+                )
+                if collision:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        f"Barcode/Alias '{b}' already assigned to {collision}",
+                    )
+                    return
+
+            if self.current_item_id:
+                self.db.update_product(
+                    self.current_item_id,
+                    item_name,
+                    barcode,
+                    mrp,
+                    rate,
+                    cat,
+                    uom,
+                    aliases_str,
+                    pur,
+                    load_qty,
+                )
+            else:
+                self.current_item_id = self.db.add_product(
+                    item_name, barcode, mrp, rate, cat, uom, aliases_str, pur, load_qty
+                )
+                self.trans_btn.setEnabled(True)
+
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM product_aliases WHERE product_id = %s",
+                (self.current_item_id,),
             )
-            == QMessageBox.Yes
-        ):
-            if self.db.delete_product(self.current_product_id):
-                QMessageBox.information(self, "Success", "Item moved to Recycle Bin.")
-                self.clear_form()
+            conn.commit()
 
-    def load_aliases(self):
-        """
-        Refresh the table of alternate barcodes and units for the current product.
-        """
-        self.alias_table.setRowCount(0)
-        for row, alias in enumerate(self.db.get_aliases(self.current_product_id)):
-            self.alias_table.insertRow(row)
-            for c in range(4):
-                self.alias_table.setItem(row, c, QTableWidgetItem(str(alias[c + 1])))
-            self.alias_table.setItem(row, 4, QTableWidgetItem(f"{float(alias[5]):.3f}"))
-            self.alias_table.setItem(row, 5, QTableWidgetItem(f"{float(alias[6]):.3f}"))
-            del_btn = QPushButton("Del")
-            del_btn.clicked.connect(
-                lambda _, aid=alias[0]: self.db.delete_alias(aid) or self.load_aliases()
+            for r in range(1, self.grid.rowCount()):
+                v_bar = self._get_text(r, 1)
+                if not v_bar:
+                    continue
+                v_aliases_str = self._get_text(r, 2)
+
+                variant_barcodes = set()
+                variant_barcodes.add(v_bar)
+                for a in v_aliases_str.split(","):
+                    a = a.strip()
+                    if a:
+                        if a in variant_barcodes or a in all_input_barcodes:
+                            QMessageBox.warning(
+                                self, "Error", f"Duplicate alias found in variants: {a}"
+                            )
+                            return
+                        variant_barcodes.add(a)
+
+                for b in variant_barcodes:
+                    collision = self.db.check_alias_exists(
+                        b, exclude_product_id=self.current_item_id
+                    )
+                    if collision:
+                        QMessageBox.warning(
+                            self,
+                            "Error",
+                            f"Variant Barcode/Alias '{b}' already assigned to {collision}",
+                        )
+                        return
+
+                all_input_barcodes.update(variant_barcodes)
+
+                v_uom = self._get_text(r, 3)
+                v_mrp = float(self._get_text(r, 4) or 0)
+                v_rate = float(self._get_text(r, 5) or 0)
+                v_pur = float(self._get_text(r, 6) or 0)
+                v_fact = float(self._get_text(r, 7) or 1.0)
+                v_stock = float(self._get_text(r, 8) or 0)
+                self.db.add_alias(
+                    self.current_item_id,
+                    v_bar,
+                    v_uom,
+                    v_mrp,
+                    v_rate,
+                    v_fact,
+                    1.0,
+                    v_aliases_str,
+                    v_pur,
+                    v_stock,
+                )
+
+            QMessageBox.information(
+                self, "Success", f"Item '{item_name}' and variants saved."
             )
-            self.alias_table.setCellWidget(row, 6, del_btn)
+            self.status_lbl.setText("Saved successfully.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save: {e}")
 
-    def auto_calc_alias_price(self):
-        """
-        Automatically calculate alternate unit price based on conversion factor.
-        """
-        self.alias_price.setValue(self.price_input.value() * self.alias_factor.value())
-
-    def auto_calc_alias_mrp(self):
-        """
-        Automatically calculate alternate unit MRP based on conversion factor.
-        """
-        self.alias_mrp.setValue(self.mrp_input.value() * self.alias_factor.value())
-
-    def add_alias(self):
-        """
-        Validate and save a new alternate barcode/unit for the product.
-        """
-        full_uom = self.alias_uom.currentText()
-        uom_name = full_uom.split(" (")[0] if " (" in full_uom else full_uom
-        if self.db.add_alias(
-            self.current_product_id,
-            self.alias_barcode.text(),
-            uom_name,
-            self.alias_mrp.value(),
-            self.alias_price.value(),
-            self.alias_factor.value(),
-            self.alias_qty.value(),
-        ):
-            self.alias_barcode.clear()
-            self.load_aliases()
-
-    def clear_form(self):
-        """
-        Reset all form fields to their default empty state.
-        """
-        self.current_product_id = None
-        self.name_input.clear()
-        self.barcode_input.clear()
-        self.mrp_input.setValue(0)
-        self.price_input.setValue(0)
-        self.category_input.clear()
-        self.alias_table.setRowCount(0)
-        self.alias_grp.setEnabled(False)
-        self.save_btn.setText("Save Base Item (F2)")
-        self.del_btn.setVisible(False)
-        self.reg_btn.setVisible(False)
-
-    def save_product(self):
-        """
-        Validate input and create or update the base product record.
-        """
-        name, barcode, mrp, price, cat = (
-            self.name_input.text(),
-            self.barcode_input.text(),
-            self.mrp_input.value(),
-            self.price_input.value(),
-            self.category_input.text() or "General",
-        )
-        full_uom = self.base_uom_input.currentText()
-        uom = full_uom.split(" (")[0] if " (" in full_uom else full_uom
-        if not name or not barcode:
-            return
-        if self.current_product_id:
-            if self.db.update_product(
-                self.current_product_id, name, barcode, mrp, price, cat, uom
-            ):
-                QMessageBox.information(self, "Success", f"Item '{name}' Updated.")
-                self.accept()
-        else:
-            pid = self.db.add_product(name, barcode, mrp, price, cat, uom)
-            if pid:
-                self.current_product_id = pid
-                self.alias_grp.setEnabled(True)
-                self.save_btn.setText("Update Base Item (F2)")
-                QMessageBox.information(self, "Success", f"Item '{name}' Saved.")
-                self.accept()
+    def eventFilter(self, source, event):
+        if source is self.grid and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                row, col = self.grid.currentRow(), self.grid.currentColumn()
+                if col < 9:
+                    self.grid.setCurrentCell(row, col + 1)
+                else:
+                    if row == self.grid.rowCount() - 1:
+                        self.add_empty_variant_row()
+                    self.grid.setCurrentCell(row + 1, 1)
+                return True
+        return super().eventFilter(source, event)
 
 
 class SalesHistoryDialog(QDialog):
@@ -2869,11 +2952,8 @@ class ExcelTable(QTableWidget):
         )
         header = self.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
-        # Barcode fixed width
         self.setColumnWidth(0, 160)
-        # Item Name stretches to fill available space
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        # Numeric columns fixed width
         for i in [2, 3, 4, 5, 6, 7]:
             self.setColumnWidth(i, 80)
 
@@ -2910,6 +2990,10 @@ class ExcelTable(QTableWidget):
         """
         Handle spreadsheet-style navigation and editing keys within the billing grid.
         """
+        if self.state() == QAbstractItemView.EditingState:
+            super().keyPressEvent(event)
+            return
+
         if event.key() == Qt.Key_F2:
             event.ignore()
             return
@@ -2993,6 +3077,8 @@ class FuzzySearchLineEdit(QLineEdit):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
+        self.column_idx = 0
+        self.selected_product = None
         self.popup = QListWidget()
         self.popup.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
         self.popup.setFocusPolicy(Qt.NoFocus)
@@ -3025,6 +3111,9 @@ class FuzzySearchLineEdit(QLineEdit):
         self.popup.itemClicked.connect(self.on_item_clicked)
         self.textChanged.connect(self.on_text_changed)
 
+    def set_column_context(self, col):
+        self.column_idx = col
+
     def on_text_changed(self, text):
         """
         Handle text changes in the search input and update the popup list.
@@ -3039,7 +3128,8 @@ class FuzzySearchLineEdit(QLineEdit):
                 self.popup.hide()
                 return
             for p in products[:10]:
-                item = QListWidgetItem(f"{p[1]} ({p[2]})")
+                label = f"{p[1]} | {p[6]} | Qty: {p[7]:.2f} | MRP: {p[3]:.2f}"
+                item = QListWidgetItem(label)
                 item.setData(Qt.UserRole, p)
                 self.popup.addItem(item)
             self.popup.setCurrentRow(0)
@@ -3048,15 +3138,35 @@ class FuzzySearchLineEdit(QLineEdit):
             pos = self.mapToGlobal(self.rect().bottomLeft())
             self.popup.move(pos)
             self.popup.show()
-        except Exception:
+        except Exception as e:
+            print(f"Fuzzy search error: {e}")
             pass
 
     def on_item_clicked(self, item):
         """
         Handle item selection from the search results popup.
         """
-        p = item.data(Qt.UserRole)
-        self.setText(p[2])
+        self.selected_product = item.data(Qt.UserRole)
+        p = self.selected_product
+
+        parent_table = self.parent().parent()
+        if isinstance(parent_table, QTableWidget):
+            row = parent_table.currentRow()
+            cur_it = parent_table.item(row, 0)
+            if not cur_it:
+                cur_it = QTableWidgetItem()
+                parent_table.setItem(row, 0, cur_it)
+            cur_it.setData(Qt.UserRole, p)
+
+        if isinstance(parent_table, QTableWidget):
+            header_label = parent_table.horizontalHeaderItem(0).text()
+            if "Barcode" in header_label:
+                self.setText(p[2])  # Barcode
+            else:
+                self.setText(p[1])  # Name
+        else:
+            self.setText(p[2])
+
         self.popup.hide()
         self.returnPressed.emit()
 
@@ -3064,6 +3174,26 @@ class FuzzySearchLineEdit(QLineEdit):
         """
         Override key events to handle navigation within the search popup.
         """
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if self.popup.isVisible() and self.popup.currentRow() >= 0:
+                self.on_item_clicked(self.popup.currentItem())
+                return
+
+            if self.text().strip() == "":
+                try:
+                    table = self.parent().parent()
+                    window = table.window()
+                    if hasattr(window, "open_search_dialog"):
+                        self.popup.hide()
+                        window.open_search_dialog()
+                        return
+                except Exception:
+                    pass
+
+            self.popup.hide()
+            self.returnPressed.emit()
+            return
+
         if self.popup.isVisible():
             if event.key() == Qt.Key_Down:
                 self.popup.setCurrentRow(
@@ -3076,10 +3206,6 @@ class FuzzySearchLineEdit(QLineEdit):
                     % self.popup.count()
                 )
                 return
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if self.popup.currentRow() >= 0:
-                    self.on_item_clicked(self.popup.currentItem())
-                    return
             if event.key() == Qt.Key_Tab:
                 if self.popup.currentRow() >= 0:
                     self.on_item_clicked(self.popup.currentItem())
@@ -3089,20 +3215,10 @@ class FuzzySearchLineEdit(QLineEdit):
             if event.key() == Qt.Key_Escape:
                 self.popup.hide()
                 return
-        elif event.key() in (Qt.Key_Return, Qt.Key_Enter) and self.text() == "":
-            try:
-                table = self.parent().parent()
-                window = table.window()
-                if hasattr(window, "open_search_dialog"):
-                    self.popup.hide()
-                    window.open_search_dialog()
-                    return
-            except Exception:
-                pass
+
         super().keyPressEvent(event)
 
     def hideEvent(self, event):
-        """Hideevent."""
         self.popup.hide()
         super().hideEvent(event)
 
@@ -3118,8 +3234,15 @@ class FuzzyCompleterDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         if index.column() == 0:
-            return FuzzySearchLineEdit(self.db, parent)
+            editor = FuzzySearchLineEdit(self.db, parent)
+            editor.set_column_context(index.column())
+            return editor
         return super().createEditor(parent, option, index)
+
+    def setModelData(self, editor, model, index):
+        if isinstance(editor, FuzzySearchLineEdit) and editor.selected_product:
+            model.setData(index, editor.selected_product, Qt.UserRole)
+        super().setModelData(editor, model, index)
 
 
 class MainWindow(QMainWindow):
@@ -3141,6 +3264,7 @@ class MainWindow(QMainWindow):
         self.current_sale_id = None
         self.calc_dlg = None
         self.theme_name = self.db.get_setting("theme", "mocha")
+        self.currency_symbol = self.db.get_setting("currency_symbol", "₹")
         self.init_ui()
         self.apply_theme(self.theme_name)
 
@@ -3156,10 +3280,8 @@ class MainWindow(QMainWindow):
         app.setWindowIcon(QIcon(resource_path(f"svg/logo_{theme_name}.svg")))
         app.setStyleSheet(style)
 
-        # Apply style to all open top-level widgets (like PrinterConfigDialog)
         for widget in app.topLevelWidgets():
             widget.setStyleSheet(style)
-            # Recursively update children that might need explicit polish
             widget.style().unpolish(widget)
             widget.style().polish(widget)
 
@@ -3167,7 +3289,6 @@ class MainWindow(QMainWindow):
         self.update_total_label_style()
 
     def check_permission(self, perm_key):
-        """Check if current user has specific permission."""
         import json
 
         try:
@@ -3176,12 +3297,12 @@ class MainWindow(QMainWindow):
 
             perms_str = self.current_user[4]
             if not perms_str:
-                # Fallback for users without explicit permissions
                 role = self.current_user[3]
                 if role == "admin":
                     return True
                 defaults = {
                     "staff": ["billing", "view_reports"],
+                    "cashier": ["billing", "view_reports"],
                     "manager": [
                         "billing",
                         "view_reports",
@@ -3257,10 +3378,25 @@ class MainWindow(QMainWindow):
             print(f"Auto-backup failed: {e}")
 
     def init_ui(self):
-        menubar = self.menuBar()
-        menubar.setFont(QFont("FiraCode Nerd Font", 10))
+        company_name = self.db.get_setting("company_name", "elytPOS System")
+        fy_start = self.db.get_setting("books_start", "2026-04-01")
+        try:
+            year = fy_start.split("-")[0]
+            fy_str = f"{year}-{int(year) + 1}"
+        except Exception:
+            fy_str = "2026-2027"
 
-        # Masters Menu
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        menubar = QMenuBar()
+        menubar.setNativeMenuBar(False)
+        menubar.setFont(QFont("FiraCode Nerd Font", 10))
+        layout.addWidget(menubar)
+
         masters_menu = menubar.addMenu("&Masters")
         if self.check_permission("manage_inventory"):
             inv_action = QAction("&Item Master (Ctrl+I)", self)
@@ -3273,7 +3409,6 @@ class MainWindow(QMainWindow):
         if self.check_permission("manage_customers"):
             masters_menu.addAction("&Customer Master", self.open_customer_master)
 
-        # Administration Menu
         if self.check_permission("manage_users") or self.check_permission("settings"):
             admin_menu = menubar.addMenu("&Administration")
 
@@ -3291,7 +3426,6 @@ class MainWindow(QMainWindow):
                 user_action.triggered.connect(self.open_user_master)
                 admin_menu.addAction(user_action)
 
-        # Transactions Menu
         if self.check_permission("manage_purchases") or self.check_permission(
             "manage_schemes"
         ):
@@ -3314,7 +3448,6 @@ class MainWindow(QMainWindow):
                     "&List Schemes", lambda: self.open_scheme_list("list")
                 )
 
-        # Tools Menu
         tools_menu = menubar.addMenu("&Tools")
         calc_action = QAction("&Calculator (F8)", self)
         calc_action.setShortcuts(["Ctrl+Alt+C", "F8"])
@@ -3325,7 +3458,6 @@ class MainWindow(QMainWindow):
             tools_menu.addAction("&Maintenance", self.open_maintenance)
             tools_menu.addAction("&Recycle Bin", self.open_recycle_bin)
 
-        # Settings Menu
         settings_menu = menubar.addMenu("&Settings")
         if self.check_permission("settings"):
             settings_menu.addAction("Printer &Settings", self.open_printer_config)
@@ -3341,63 +3473,77 @@ class MainWindow(QMainWindow):
         help_action.setShortcut("F1")
         help_action.triggered.connect(self.open_help)
         help_menu.addAction(help_action)
-        
+
         license_action = QAction("&License", self)
         license_action.triggered.connect(self.open_license)
         help_menu.addAction(license_action)
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(5)
-        layout.setContentsMargins(5, 5, 5, 5)
-
-        # --- Top Bar: Date | Bill No | Customer Lookup ---
         top_bar = QFrame()
         top_bar.setObjectName("header-frame")
         top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(10, 5, 10, 5)
+        top_layout.setContentsMargins(15, 10, 15, 10)
 
-        # Date & Bill info
+        date_grp = QHBoxLayout()
         self.date_edit = QDateEdit()
         self.date_edit.setDisplayFormat("dd-MM-yyyy")
         self.date_edit.setDate(QDate.currentDate())
         self.date_edit.setCalendarPopup(False)
-        self.date_edit.setFixedWidth(120)
-        self.bill_no_label = QLabel("<b>NEW</b>")
-        self.bill_no_label.setStyleSheet("color: green; font-size: 14px;")
+        self.date_edit.setFixedWidth(130)
+        self.date_edit.setFixedHeight(35)
 
-        top_layout.addWidget(QLabel("Date:"))
-        top_layout.addWidget(self.date_edit)
-        top_layout.addSpacing(20)
-        top_layout.addWidget(QLabel("Bill No:"))
-        top_layout.addWidget(self.bill_no_label)
+        self.bill_no_label = QLabel("<b>NEW BILL</b>")
+        self.bill_no_label.setStyleSheet(
+            "color: #40a02b; font-size: 16px; font-weight: bold; background: #e6f4ea; padding: 5px 10px; border-radius: 4px;"
+        )
+
+        date_grp.addWidget(QLabel("<b>DATE:</b>"))
+        date_grp.addWidget(self.date_edit)
+        date_grp.addSpacing(20)
+        date_grp.addWidget(QLabel("<b>BILL NO:</b>"))
+        date_grp.addWidget(self.bill_no_label)
+        top_layout.addLayout(date_grp)
         top_layout.addStretch()
 
-        # Customer Lookup
-        self.cust_mobile_input = QLineEdit()
-        self.cust_mobile_input.setPlaceholderText("Customer Mobile / ID")
-        self.cust_mobile_input.setFixedWidth(200)
-        self.cust_mobile_input.returnPressed.connect(self.handle_customer_lookup)
-
-        self.cust_search_btn = QPushButton()
-        self.cust_search_btn.setIcon(QIcon.fromTheme("edit-find"))
-        self.cust_search_btn.setToolTip("Search Customer")
-        self.cust_search_btn.clicked.connect(self.open_customer_search)
-
-        self.cust_name_label = QLabel("Walk-in Customer")
-        self.cust_name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-        self.cust_mobile_label = QLabel("")
-        self.selected_customer_data = None
-
-        top_layout.addWidget(QLabel("Customer:"))
-        top_layout.addWidget(self.cust_mobile_input)
-        top_layout.addWidget(self.cust_search_btn)
-        top_layout.addSpacing(10)
-        top_layout.addWidget(self.cust_name_label)
-        top_layout.addWidget(self.cust_mobile_label)
+        comp_lbl = QLabel(f"<b>{company_name}</b> | FY: {fy_str}")
+        comp_lbl.setStyleSheet("font-size: 14px; opacity: 0.8;")
+        top_layout.addWidget(comp_lbl)
 
         layout.addWidget(top_bar)
+
+        cust_frame = QFrame()
+        cust_frame.setStyleSheet(
+            "background-color: rgba(0,0,0,0.03); border-radius: 8px; margin: 5px 0;"
+        )
+        cust_layout = QHBoxLayout(cust_frame)
+        cust_layout.setContentsMargins(15, 10, 15, 10)
+
+        self.cust_mobile_input = QLineEdit()
+        self.cust_mobile_input.setPlaceholderText("Customer Mobile / ID (F3)")
+        self.cust_mobile_input.setFixedWidth(250)
+        self.cust_mobile_input.setFixedHeight(45)
+        self.cust_mobile_input.setStyleSheet(
+            "font-size: 14pt; padding: 5px; border: 2px solid #ccc;"
+        )
+        self.cust_mobile_input.returnPressed.connect(self.handle_customer_lookup)
+
+        self.cust_name_label = QLabel("Walk-in Customer")
+        self.cust_name_label.setStyleSheet(
+            "font-weight: 900; font-size: 18pt; color: #1e66f5; margin-left: 20px;"
+        )
+        self.cust_mobile_label = QLabel("")
+        self.cust_mobile_label.setStyleSheet(
+            "font-size: 14pt; color: #666; margin-left: 10px;"
+        )
+
+        self.selected_customer_data = None
+
+        cust_layout.addWidget(QLabel("<b>CUSTOMER:</b>"))
+        cust_layout.addWidget(self.cust_mobile_input)
+        cust_layout.addWidget(self.cust_name_label)
+        cust_layout.addWidget(self.cust_mobile_label)
+        cust_layout.addStretch()
+
+        layout.addWidget(cust_frame)
 
         self.grid = ExcelTable()
         self.grid.itemChanged.connect(self.handle_grid_change)
@@ -3409,41 +3555,58 @@ class MainWindow(QMainWindow):
         btn_layout = QHBoxLayout()
         btn_f2 = QPushButton("&Save (F2)")
         btn_f2.clicked.connect(self.process_checkout)
-        btn_f3 = QPushButton("S&earch (F3)")
-        btn_f3.clicked.connect(self.open_search_dialog)
+        btn_f10 = QPushButton("S&earch (F10)")
+        btn_f10.clicked.connect(self.open_search_dialog)
+        btn_f3 = QPushButton("C&ust (F3)")
+        btn_f3.clicked.connect(self.open_customer_search)
         btn_f4 = QPushButton("C&lear (F4)")
         btn_f4.clicked.connect(self.reset_grid)
-        btn_f5 = QPushButton("&History (F5)")
-        btn_f5.clicked.connect(self.view_history)
-        btn_f6 = QPushButton("&Hold (F6)")
-        btn_f6.clicked.connect(self.hold_current_bill)
-        btn_f7 = QPushButton("&Recall (F7)")
-        btn_f7.clicked.connect(self.recall_held_bill)
-        btn_calc = QPushButton("Ca&lc (F8)")
-        btn_calc.clicked.connect(self.open_calculator)
+
+        btn_more = QPushButton("More...")
+        more_menu = QMenu(self)
+
+        act_history = QAction("&History (F5)", self)
+        act_history.triggered.connect(self.view_history)
+        more_menu.addAction(act_history)
+
+        act_hold = QAction("&Hold (F6)", self)
+        act_hold.triggered.connect(self.hold_current_bill)
+        more_menu.addAction(act_hold)
+
+        act_recall = QAction("&Recall (F7)", self)
+        act_recall.triggered.connect(self.recall_held_bill)
+        more_menu.addAction(act_recall)
+
+        act_calc = QAction("Ca&lc (F8)", self)
+        act_calc.triggered.connect(self.open_calculator)
+        more_menu.addAction(act_calc)
+
+        btn_more.setMenu(more_menu)
+
         btn_esc = QPushButton("&Quit (Esc)")
         btn_esc.clicked.connect(self.close)
+
         btn_layout.addWidget(btn_f2)
+        btn_layout.addWidget(btn_f10)
         btn_layout.addWidget(btn_f3)
         btn_layout.addWidget(btn_f4)
-        btn_layout.addWidget(btn_f5)
-        btn_layout.addWidget(btn_f6)
-        btn_layout.addWidget(btn_f7)
-        btn_layout.addWidget(btn_calc)
+        btn_layout.addWidget(btn_more)
         btn_layout.addWidget(btn_esc)
-        self.lbl_total_qty = QLabel("Qty: 0")
         self.lbl_total_amt = QLabel("Total: 0.00")
         self.update_total_label_style()
         footer.addLayout(btn_layout)
         footer.addStretch()
-        footer.addWidget(self.lbl_total_qty)
         footer.addSpacing(20)
         footer.addWidget(self.lbl_total_amt)
         layout.addLayout(footer)
         self.grid.setFocus()
         self.grid.setCurrentCell(0, 0)
+        c_shortcut = QAction(self)
+        c_shortcut.setShortcut("F3")
+        c_shortcut.triggered.connect(self.open_customer_search)
+        self.addAction(c_shortcut)
         s_shortcut = QAction(self)
-        s_shortcut.setShortcut("F3")
+        s_shortcut.setShortcut("F10")
         s_shortcut.triggered.connect(self.open_search_dialog)
         self.addAction(s_shortcut)
         h_shortcut = QAction(self)
@@ -3472,7 +3635,6 @@ class MainWindow(QMainWindow):
         self.addAction(quit_shortcut)
 
     def open_printer_config(self):
-        """Open the printer configuration dialog."""
         if not self.check_permission("settings"):
             QMessageBox.warning(
                 self,
@@ -3485,15 +3647,12 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_help(self):
-        """Open the help and documentation dialog."""
         HelpDialog(self).exec()
 
     def open_license(self):
-        """Open the license dialog."""
         LicenseDialog(self).exec()
 
     def open_scheme_entry(self, sid=None):
-        """Open the dialog to create or edit a promotional scheme."""
         if not self.check_permission("manage_schemes"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Schemes."
@@ -3512,7 +3671,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_scheme_list(self, mode):
-        """Open the list of promotional schemes."""
         if not self.check_permission("manage_schemes"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Schemes."
@@ -3522,7 +3680,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_customer_master(self):
-        """Open the customer management dialog."""
         if not self.check_permission("manage_customers"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Customers."
@@ -3532,7 +3689,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_customer_search(self):
-        """Open the customer search and selection dialog."""
         dlg = CustomerSearchDialog(self.db, self)
         if dlg.exec() == QDialog.Accepted:
             customer = dlg.selected_customer
@@ -3543,7 +3699,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_purchase_master(self):
-        """Open the purchase entry and recording dialog."""
         if not self.check_permission("manage_purchases"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Purchases."
@@ -3553,7 +3708,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_inventory(self):
-        """Open the Item Master / Inventory management dialog."""
         if not self.check_permission("manage_inventory"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Inventory."
@@ -3563,7 +3717,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_uom_master(self):
-        """Open the Units of Measure management dialog."""
         if not self.check_permission("manage_inventory"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage UOMs."
@@ -3573,7 +3726,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_language_master(self):
-        """Open the language management dialog."""
         if not self.check_permission("manage_inventory"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Languages."
@@ -3583,7 +3735,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_create_company(self):
-        """Open the company creation dialog."""
         if not self.check_permission("settings") and not self.check_permission(
             "database_ops"
         ):
@@ -3595,7 +3746,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_modify_company(self):
-        """Open the company modification dialog."""
         if not self.check_permission("settings"):
             QMessageBox.warning(
                 self,
@@ -3604,12 +3754,10 @@ class MainWindow(QMainWindow):
             )
             return
         CreateCompanyDialog(self.db.conn_params, db_manager=self.db, parent=self).exec()
-        # Refresh printer settings from updated DB settings
         self.printer.load_from_db()
         self.showFullScreen()
 
     def open_user_master(self):
-        """Open the system user management dialog."""
         if not self.check_permission("manage_users"):
             QMessageBox.warning(
                 self, "Access Denied", "You do not have permission to manage Users."
@@ -3619,7 +3767,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_maintenance(self):
-        """Open the administrative maintenance dashboard."""
         if not self.check_permission("database_ops"):
             QMessageBox.warning(
                 self,
@@ -3631,7 +3778,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_recycle_bin(self):
-        """Open the recycle bin dialog to view/restore deleted items."""
         if not self.check_permission("database_ops") and not self.check_permission(
             "manage_inventory"
         ):
@@ -3645,7 +3791,6 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def open_calculator(self):
-        """Open the integrated floating calculator."""
         if not hasattr(self, "calc_dlg") or self.calc_dlg is None:
             self.calc_dlg = CalculatorDialog(self)
         self.calc_dlg.show()
@@ -3653,12 +3798,10 @@ class MainWindow(QMainWindow):
         self.calc_dlg.activateWindow()
 
     def view_history(self):
-        """Open the sales history and day book dialog."""
         SalesHistoryDialog(self.db, self.printer, self).exec()
         self.showFullScreen()
 
     def handle_customer_lookup(self):
-        """Perform a quick customer search by mobile number."""
         query = self.cust_mobile_input.text().strip()
         dlg = CustomerSearchDialog(self.db, self)
         if query:
@@ -3729,7 +3872,7 @@ class MainWindow(QMainWindow):
                     self.grid.setItem(row, 0, QTableWidgetItem(item["barcode"]))
                     self.grid.setItem(row, 1, QTableWidgetItem(item["name"]))
                     self.grid.setItem(row, 2, QTableWidgetItem(str(item["quantity"])))
-                    self.grid.setItem(row, 3, QTableWidgetItem(item["uom"]))
+                    self.update_uom_dropdown(row, prod[0], item["uom"])
                     self.update_mrp_dropdown(row, prod[0], item["uom"], item["mrp"])
                     self.grid.setItem(row, 5, QTableWidgetItem(f"{item['price']:.3f}"))
                     self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
@@ -3776,9 +3919,9 @@ class MainWindow(QMainWindow):
                 self.grid.setItem(row, 0, QTableWidgetItem(item["barcode"]))
                 self.grid.setItem(row, 1, QTableWidgetItem(item["name"]))
                 self.grid.setItem(row, 2, QTableWidgetItem(str(item["quantity"])))
-                self.grid.setItem(row, 3, QTableWidgetItem(item["uom"]))
 
-                # Use stored MRP if available, else fallback to current master
+                self.update_uom_dropdown(row, prod[0], item["uom"])
+
                 mrp = item.get("mrp")
                 if not mrp:
                     uom_data = self.db.get_product_uom_data(prod[0], item["uom"])
@@ -3826,20 +3969,41 @@ class MainWindow(QMainWindow):
             if col == 0:
                 barcode = item.text().strip()
                 if barcode:
-                    product = self.db.find_product_smart(barcode)
+                    product = item.data(Qt.UserRole)
+
+                    if not product:
+                        product = self.db.find_product_smart(barcode)
+
                     if product:
-                        self.grid.item(row, 0).setText(product[2])
+                        if item.text() != str(product[2]):
+                            item.setText(str(product[2]))
                         self.populate_row(row, product)
                         QTimer.singleShot(0, lambda: self.grid.setCurrentCell(row, 2))
                     else:
                         for c in range(1, 7):
-                            self.grid.setItem(row, c, QTableWidgetItem(""))
+                            it = self.grid.item(row, c)
+                            if it:
+                                it.setText("")
             elif col == 3:
                 uom_text = item.text().strip().lower()
                 if uom_text:
                     uom_map = self.db.get_uom_map()
                     if uom_text in uom_map:
-                        self.grid.item(row, 3).setText(uom_map[uom_text])
+                        uom_text = uom_map[uom_text]
+                        self.grid.item(row, 3).setText(uom_text)
+
+                    name_it = self.grid.item(row, 1)
+                    if name_it:
+                        prod = name_it.data(Qt.UserRole)
+                        if prod:
+                            uom_data = self.db.get_product_uom_data(prod[0], uom_text)
+                            if uom_data:
+                                self.grid.setItem(
+                                    row, 5, QTableWidgetItem(f"{uom_data['price']:.3f}")
+                                )
+                                self.update_mrp_dropdown(
+                                    row, prod[0], uom_text, uom_data["mrp"]
+                                )
                 self.recalc_row(row)
             elif col in (2, 4, 5, 6):
                 self.recalc_row(row)
@@ -3851,15 +4015,68 @@ class MainWindow(QMainWindow):
         """
         Fill a grid row with data from a retrieved product object.
         """
-        self.grid.setItem(row, 1, QTableWidgetItem(product[1]))
-        qty = str(product[9]) if len(product) > 9 else "1.0"
-        self.grid.setItem(row, 2, QTableWidgetItem(qty))
-        self.grid.setItem(row, 3, QTableWidgetItem(product[6]))
-        self.update_mrp_dropdown(row, product[0], product[6], product[3])
-        self.grid.setItem(row, 5, QTableWidgetItem(f"{product[4]:.3f}"))
-        self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
-        self.grid.item(row, 1).setData(Qt.UserRole, product)
-        self.recalc_row(row)
+        try:
+            name = str(product[1])
+            mrp = float(product[3])
+            price = float(product[4])
+            uom = str(product[6])
+
+            qty = 1.0
+            if len(product) == 8:
+                qty = float(product[7])
+            elif len(product) >= 10:
+                qty = float(product[9])
+
+            self.grid.setItem(row, 1, QTableWidgetItem(name))
+            self.grid.setItem(row, 2, QTableWidgetItem(f"{qty:.2f}"))
+
+            self.update_uom_dropdown(row, product[0], uom)
+
+            self.update_mrp_dropdown(row, product[0], uom, mrp)
+            self.grid.setItem(row, 5, QTableWidgetItem(f"{price:.3f}"))
+            self.grid.setItem(row, 6, QTableWidgetItem("0.0"))
+
+            self.grid.item(row, 1).setData(Qt.UserRole, product)
+            self.recalc_row(row)
+        except Exception as e:
+            print(f"Error populating row {row}: {e}")
+
+    def update_uom_dropdown(self, row, product_id, current_uom):
+        combo = QComboBox()
+        combo.setObjectName("grid-combo")
+        units = self.db.get_product_units(product_id)
+
+        if not units:
+            units = [{"uom": current_uom, "price": 0.0, "mrp": 0.0}]
+
+        for item in units:
+            combo.addItem(str(item["uom"]), item)
+            if item["uom"] == current_uom:
+                combo.setCurrentIndex(combo.count() - 1)
+
+        combo.currentIndexChanged.connect(lambda: self.handle_uom_change(row))
+        self.grid.setCellWidget(row, 3, combo)
+
+    def handle_uom_change(self, row):
+        if self.updating_cell:
+            return
+        combo = self.grid.cellWidget(row, 3)
+        if not combo:
+            return
+        data = combo.currentData()
+        if data:
+            self.updating_cell = True
+            try:
+                self.grid.setItem(row, 5, QTableWidgetItem(f"{data['price']:.3f}"))
+
+                name_it = self.grid.item(row, 1)
+                if name_it:
+                    prod = name_it.data(Qt.UserRole)
+                    if prod:
+                        self.update_mrp_dropdown(row, prod[0], data["uom"], data["mrp"])
+            finally:
+                self.updating_cell = False
+            self.recalc_row(row)
 
     def update_mrp_dropdown(self, row, product_id, uom, current_mrp):
         """
@@ -3887,7 +4104,6 @@ class MainWindow(QMainWindow):
         if data:
             self.updating_cell = True
             try:
-                # Update the rate item if a specific price is attached to this MRP
                 if data.get("price") and data["price"] > 0:
                     self.grid.setItem(row, 5, QTableWidgetItem(f"{data['price']:.3f}"))
             finally:
@@ -3899,15 +4115,23 @@ class MainWindow(QMainWindow):
         Update the amount and discount columns for a specific row based on quantity and unit.
         """
         try:
-            qty_item, uom_item, rate_item, _disc_item = (
+            qty_item, rate_item, _disc_item = (
                 self.grid.item(row, 2),
-                self.grid.item(row, 3),
                 self.grid.item(row, 5),
                 self.grid.item(row, 6),
             )
-            qty, uom, rate = (
+
+            uom = ""
+            uom_combo = self.grid.cellWidget(row, 3)
+            if uom_combo:
+                uom = uom_combo.currentText()
+            else:
+                uom_item = self.grid.item(row, 3)
+                if uom_item:
+                    uom = uom_item.text()
+
+            qty, rate = (
                 float(qty_item.text()) if qty_item else 0.0,
-                uom_item.text() if uom_item else None,
                 float(rate_item.text()) if rate_item else 0.0,
             )
 
@@ -3923,7 +4147,6 @@ class MainWindow(QMainWindow):
             if name_item and name_item.data(Qt.UserRole):
                 p_data = list(name_item.data(Qt.UserRole))
 
-                # If mrp was not set by combo, use from p_data
                 if mrp == 0 and len(p_data) > 3:
                     mrp = float(p_data[3])
 
@@ -4030,8 +4253,9 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         rounded_total = round(t_amt)
-        self.lbl_total_qty.setText(f"Qty: {self._fmt(t_qty)}")
-        self.lbl_total_amt.setText(f"Total: {self._fmt(rounded_total)}")
+        self.lbl_total_amt.setText(
+            f"Total: {self.currency_symbol} {self._fmt(rounded_total)}"
+        )
 
     def reset_grid(self):
         """
@@ -4070,7 +4294,16 @@ class MainWindow(QMainWindow):
                 mrp_combo = self.grid.cellWidget(r, 4)
                 if mrp_combo:
                     mrp = float(mrp_combo.currentText())
-                uom = self.grid.item(r, 3).text()
+
+                uom = ""
+                factor = 1.0
+                uom_combo = self.grid.cellWidget(r, 3)
+                if uom_combo:
+                    uom = uom_combo.currentText()
+                    uom_data = uom_combo.currentData()
+                    if uom_data:
+                        factor = float(uom_data.get("factor", 1.0))
+
                 eff_p = rate * (1 - disc / 100)
                 calc_rate = eff_p
                 if uom and uom.lower() in ("g", "gram", "grams"):
@@ -4085,7 +4318,7 @@ class MainWindow(QMainWindow):
                             "mrp": mrp,
                             "quantity": qty,
                             "uom": uom,
-                            "factor": float(name_it.data(Qt.UserRole)[7]),
+                            "factor": factor,
                         }
                     )
                     total += qty * calc_rate
@@ -4167,19 +4400,16 @@ def main():
     app = QApplication(sys.argv)
     app.setFont(QFont("FiraCode Nerd Font", 10))
     config_path = os.path.join(get_app_path(), "db.config")
+    enc_path = config_path + ".enc"
 
-    # 1. Ensure config exists
-    if not os.path.exists(config_path):
+    if not os.path.exists(config_path) and not os.path.exists(enc_path):
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             sys.exit(0)
 
-    # 2. Company Selection Loop
     selected_db_name = None
     while True:
         config_params = DatabaseManager.load_config()
-        # Test connection by listing databases
         try:
-            # Check if we can connect to postgres first
             import psycopg2
 
             test_params = config_params.copy()
@@ -4187,7 +4417,6 @@ def main():
             conn = psycopg2.connect(**test_params)
             conn.close()
 
-            # If successful, show selection dialog
             sel_dlg = CompanySelectionDialog(config_params)
             if sel_dlg.exec() == QDialog.Accepted:
                 selected_db_name = sel_dlg.selected_db
@@ -4195,7 +4424,6 @@ def main():
             else:
                 sys.exit(0)
         except Exception as e:
-            # Connection failed (probably bad host/user/pass in config)
             box = QMessageBox()
             box.setIcon(QMessageBox.Critical)
             box.setWindowTitle("Database Connection Error")
@@ -4214,7 +4442,6 @@ def main():
             else:
                 sys.exit(1)
 
-    # 3. Initialize Database Manager with selected DB
     try:
         db_manager = DatabaseManager(dbname=selected_db_name)
         conn = db_manager.get_connection()
@@ -4228,14 +4455,12 @@ def main():
         )
         sys.exit(1)
 
-    # 4. Load Theme
     theme_name = db_manager.get_setting("theme", "mocha")
     app.setProperty("theme_name", theme_name)
     app.setWindowIcon(QIcon(resource_path(f"svg/logo_{theme_name}.svg")))
     style = get_style(theme_name)
     app.setStyleSheet(style)
 
-    # 5. User Login / Creation
     if not db_manager.get_users():
         if SuperUserCreationDialog(db_manager).exec() != QDialog.Accepted:
             db_manager.close()

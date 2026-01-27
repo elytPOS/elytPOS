@@ -4,6 +4,7 @@ Database management system for elytPOS.
 
 import configparser
 import os
+import crypto_utils
 
 import psycopg2
 import psycopg2.pool
@@ -21,19 +22,15 @@ class PooledConnection:
         self.conn = conn
 
     def __getattr__(self, name):
-        """Delegate attribute access to the underlying connection."""
         return getattr(self.conn, name)
 
     def __enter__(self):
-        """Support context manager protocol."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Return the connection to the pool on exit."""
         self.close()
 
     def close(self):
-        """Return the connection to the pool instead of closing it."""
         if self.conn:
             self.pool.putconn(self.conn)
             self.conn = None
@@ -54,12 +51,10 @@ class DatabaseManager:
 
     @staticmethod
     def list_databases(config_params):
-        """List all databases matching the elytpos pattern."""
         import psycopg2
 
         dbs = []
         try:
-            # Connect to default 'postgres' database to list others
             params = config_params.copy()
             params["dbname"] = "postgres"
             conn = psycopg2.connect(**params)
@@ -79,7 +74,6 @@ class DatabaseManager:
 
     @staticmethod
     def create_database(config_params, new_db_name):
-        """Create a new database."""
         import psycopg2
 
         try:
@@ -88,7 +82,6 @@ class DatabaseManager:
             conn = psycopg2.connect(**params)
             conn.autocommit = True
             cur = conn.cursor()
-            # Sanitize db name to prevent injection (basic check)
             safe_name = "".join(
                 c for c in new_db_name if c.isalnum() or c in ("_", "-")
             )
@@ -101,7 +94,6 @@ class DatabaseManager:
             return False
 
     def init_pool(self):
-        """Initialize the threaded connection pool."""
         try:
             self.pool = psycopg2.pool.ThreadedConnectionPool(1, 20, **self.conn_params)
         except Exception as e:
@@ -110,34 +102,42 @@ class DatabaseManager:
 
     @staticmethod
     def load_config():
-        """Load database parameters from config file."""
         config = configparser.ConfigParser()
         config_path = os.path.join(get_app_path(), "db.config")
+        enc_config_path = config_path + ".enc"
+
+        if os.path.exists(config_path) and not os.path.exists(enc_config_path):
+            print("Encrypting legacy db.config...")
+            crypto_utils.encrypt_file(config_path)
+
         defaults = {
             "user": "elytpos_user",
             "password": "elytpos_password",
             "host": "localhost",
             "port": "5432",
         }
-        if os.path.exists(config_path):
-            config.read(config_path)
-            if "postgresql" in config:
-                for key in defaults:
-                    if key in config["postgresql"]:
-                        defaults[key] = config["postgresql"][key]
+
+        if os.path.exists(enc_config_path):
+            try:
+                decrypted_content = crypto_utils.decrypt_content(enc_config_path)
+                config.read_string(decrypted_content)
+                if "postgresql" in config:
+                    for key in defaults:
+                        if key in config["postgresql"]:
+                            defaults[key] = config["postgresql"][key]
+            except Exception as e:
+                print(f"Error decrypting config: {e}")
+
         return defaults
 
     def get_connection(self):
-        """Get a pooled database connection."""
         return PooledConnection(self.pool, self.pool.getconn())
 
     def close(self):
-        """Close the database connection pool."""
         if self.pool:
             self.pool.closeall()
 
     def init_db(self):
-        """Initialize the database tables and run migrations."""
         commands = [
             "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
             """
@@ -145,14 +145,20 @@ class DatabaseManager:
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 barcode VARCHAR(50) UNIQUE,
+                aliases TEXT, -- Comma separated extra barcodes/aliases
                 mrp DECIMAL(12, 3) NOT NULL DEFAULT 0,
-                price DECIMAL(12, 3) NOT NULL,
+                price DECIMAL(12, 3) NOT NULL, -- Selling Price
+                purchase_price DECIMAL(12, 3) NOT NULL DEFAULT 0,
                 category VARCHAR(100),
                 base_uom VARCHAR(20) DEFAULT 'pcs',
+                load_qty DECIMAL(12, 3) NOT NULL DEFAULT 1.0,
                 is_deleted BOOLEAN DEFAULT FALSE,
                 deleted_at TIMESTAMP
             )
             """,
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS aliases TEXT;",
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(12, 3) NOT NULL DEFAULT 0;",
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS load_qty DECIMAL(12, 3) NOT NULL DEFAULT 1.0;",
             """
             CREATE TABLE IF NOT EXISTS uoms (
                 id SERIAL PRIMARY KEY,
@@ -182,7 +188,7 @@ class DatabaseManager:
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 full_name VARCHAR(100),
-                role VARCHAR(20) DEFAULT 'staff',
+                role VARCHAR(20) DEFAULT 'cashier',
                 permissions TEXT
             )
             """,
@@ -192,13 +198,17 @@ class DatabaseManager:
                 id SERIAL PRIMARY KEY,
                 product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
                 barcode VARCHAR(50) UNIQUE,
+                aliases TEXT, -- Extra aliases for this variant
                 uom VARCHAR(20) NOT NULL,
                 mrp DECIMAL(12, 3) NOT NULL DEFAULT 0,
-                price DECIMAL(12, 3) NOT NULL,
+                price DECIMAL(12, 3) NOT NULL, -- Selling Price
+                purchase_price DECIMAL(12, 3) NOT NULL DEFAULT 0,
                 factor DECIMAL(12, 3) NOT NULL DEFAULT 1.0,
-                qty DECIMAL(12, 3) NOT NULL DEFAULT 1.0
+                qty DECIMAL(12, 3) NOT NULL DEFAULT 1.0 -- Qty in this unit
             )
             """,
+            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS aliases TEXT;",
+            "ALTER TABLE product_aliases ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(12, 3) NOT NULL DEFAULT 0;",
             """
             CREATE TABLE IF NOT EXISTS sales (
                 id SERIAL PRIMARY KEY,
@@ -416,7 +426,6 @@ class DatabaseManager:
             conn.close()
 
     def add_translation(self, product_id, language_id, translated_name):
-        """Add translation."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -436,7 +445,6 @@ class DatabaseManager:
             conn.close()
 
     def get_translations(self, product_id):
-        """Get translations."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -454,7 +462,6 @@ class DatabaseManager:
         return trans
 
     def get_translated_items(self, items, language_id):
-        """Get translated items."""
         if not language_id:
             return items
         conn = self.get_connection()
@@ -474,8 +481,7 @@ class DatabaseManager:
         conn.close()
         return translated_items
 
-    def add_user(self, username, password, full_name, role="staff", permissions=None):
-        """Add user."""
+    def add_user(self, username, password, full_name, role="cashier", permissions=None):
         import hashlib
         import json
 
@@ -499,7 +505,6 @@ class DatabaseManager:
             conn.close()
 
     def get_users(self):
-        """Get users."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -511,7 +516,6 @@ class DatabaseManager:
         return users
 
     def delete_user(self, user_id):
-        """Delete user."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -647,7 +651,6 @@ class DatabaseManager:
             conn.close()
 
     def get_purchase_history(self):
-        """Get purchase history."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -659,7 +662,6 @@ class DatabaseManager:
         return purchases
 
     def get_item_purchase_register(self, product_id):
-        """Get item purchase register."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -678,7 +680,6 @@ class DatabaseManager:
         return register
 
     def search_purchases_by_item(self, query):
-        """Search purchases by item."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -698,7 +699,6 @@ class DatabaseManager:
         return purchases
 
     def get_suppliers(self):
-        """Get suppliers."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -710,7 +710,6 @@ class DatabaseManager:
         return suppliers
 
     def hold_sale(self, items, total_amount, user_id):
-        """Hold sale."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -810,15 +809,79 @@ class DatabaseManager:
             cur.close()
             conn.close()
 
+    def check_alias_exists(self, barcode, exclude_product_id=None):
+        if not barcode:
+            return None
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        try:
+            query = "SELECT name FROM products WHERE (barcode = %s OR aliases ILIKE %s OR aliases ILIKE %s OR aliases ILIKE %s)"
+            params = [
+                barcode,
+                barcode,
+                f"{barcode},%",
+                f"%,{barcode}",
+                f"%,{barcode},%",
+            ]
+            if exclude_product_id:
+                query += " AND id <> %s"
+                params.append(exclude_product_id)
+
+            cur.execute(query, tuple(params))
+            res = cur.fetchone()
+            if res:
+                return f"Product: {res[0]}"
+
+            query = "SELECT p.name FROM product_aliases pa JOIN products p ON pa.product_id = p.id WHERE (pa.barcode = %s OR pa.aliases ILIKE %s OR pa.aliases ILIKE %s OR pa.aliases ILIKE %s)"
+            params = [
+                barcode,
+                barcode,
+                f"{barcode},%",
+                f"%,{barcode}",
+                f"%,{barcode},%",
+            ]
+            if exclude_product_id:
+                query += " AND pa.product_id <> %s"
+                params.append(exclude_product_id)
+
+            cur.execute(query, tuple(params))
+            res = cur.fetchone()
+            if res:
+                return f"Variant of: {res[0]}"
+
+            return None
+        finally:
+            cur.close()
+            conn.close()
+
     def add_product(
-        self, name, barcode, mrp, price, category="General", base_uom="pcs"
+        self,
+        name,
+        barcode,
+        mrp,
+        price,
+        category="General",
+        base_uom="pcs",
+        aliases=None,
+        purchase_price=0,
+        load_qty=1.0,
     ):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO products (name, barcode, mrp, price, category, base_uom) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                (name, barcode, mrp, price, category, base_uom),
+                "INSERT INTO products (name, barcode, aliases, mrp, price, purchase_price, category, base_uom, load_qty) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (
+                    name,
+                    barcode,
+                    aliases,
+                    mrp,
+                    price,
+                    purchase_price,
+                    category,
+                    base_uom,
+                    load_qty,
+                ),
             )
             pid = cur.fetchone()[0]
             conn.commit()
@@ -830,14 +893,36 @@ class DatabaseManager:
             cur.close()
             conn.close()
 
-    def update_product(self, product_id, name, barcode, mrp, price, category, base_uom):
-        """Update product."""
+    def update_product(
+        self,
+        product_id,
+        name,
+        barcode,
+        mrp,
+        price,
+        category,
+        base_uom,
+        aliases=None,
+        purchase_price=0,
+        load_qty=1.0,
+    ):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                "UPDATE products SET name=%s, barcode=%s, mrp=%s, price=%s, category=%s, base_uom=%s WHERE id=%s",
-                (name, barcode, mrp, price, category, base_uom, product_id),
+                "UPDATE products SET name=%s, barcode=%s, aliases=%s, mrp=%s, price=%s, purchase_price=%s, category=%s, base_uom=%s, load_qty=%s WHERE id=%s",
+                (
+                    name,
+                    barcode,
+                    aliases,
+                    mrp,
+                    price,
+                    purchase_price,
+                    category,
+                    base_uom,
+                    load_qty,
+                    product_id,
+                ),
             )
             conn.commit()
             return True
@@ -848,14 +933,36 @@ class DatabaseManager:
             cur.close()
             conn.close()
 
-    def add_alias(self, product_id, barcode, uom, mrp, price, factor, qty=1.0):
-        """Add alias."""
+    def add_alias(
+        self,
+        product_id,
+        barcode,
+        uom,
+        mrp,
+        price,
+        factor,
+        qty=1.0,
+        aliases=None,
+        purchase_price=0,
+        stock_qty=0,
+    ):
         conn = self.get_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO product_aliases (product_id, barcode, uom, mrp, price, factor, qty) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (product_id, barcode, uom, mrp, price, factor, qty),
+                "INSERT INTO product_aliases (product_id, barcode, aliases, uom, mrp, price, purchase_price, factor, qty, stock_qty) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    product_id,
+                    barcode,
+                    aliases,
+                    uom,
+                    mrp,
+                    price,
+                    purchase_price,
+                    factor,
+                    qty,
+                    stock_qty,
+                ),
             )
             conn.commit()
             return True
@@ -867,11 +974,10 @@ class DatabaseManager:
             conn.close()
 
     def get_aliases(self, product_id):
-        """Get aliases."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, barcode, uom, mrp, price, factor, qty FROM product_aliases WHERE product_id = %s",
+            "SELECT id, barcode, uom, mrp, price, factor, qty, aliases, purchase_price, stock_qty FROM product_aliases WHERE product_id = %s",
             (product_id,),
         )
         aliases = cur.fetchall()
@@ -880,7 +986,6 @@ class DatabaseManager:
         return aliases
 
     def delete_alias(self, alias_id):
-        """Delete alias."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -893,8 +998,18 @@ class DatabaseManager:
             cur.close()
             conn.close()
 
+    def get_all_products(self):
+        conn = self.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom, aliases, purchase_price, load_qty FROM products WHERE is_deleted = FALSE ORDER BY name"
+        )
+        products = cur.fetchall()
+        cur.close()
+        conn.close()
+        return products
+
     def delete_product(self, product_id):
-        """Delete product."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -912,7 +1027,6 @@ class DatabaseManager:
             conn.close()
 
     def restore_product(self, product_id):
-        """Restore product."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -933,7 +1047,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name, barcode, mrp, price, category, base_uom, deleted_at FROM products WHERE is_deleted = TRUE ORDER BY deleted_at DESC"
+            "SELECT id, name, barcode, mrp, price, category, base_uom, deleted_at, aliases, purchase_price, load_qty FROM products WHERE is_deleted = TRUE ORDER BY deleted_at DESC"
         )
         products = cur.fetchall()
         cur.close()
@@ -962,49 +1076,82 @@ class DatabaseManager:
     def search_products(self, query):
         conn = self.get_connection()
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, name, barcode, mrp, price, category, uom FROM (
-                SELECT p.id, p.name, p.barcode as barcode, p.mrp, p.price, p.category, 
-                       p.base_uom as uom, similarity(p.name, %s) as sim_n, 
-                       similarity(p.barcode, %s) as sim_b, p.is_deleted
-                FROM products p
-                UNION ALL
-                SELECT p.id, p.name, pa.barcode as barcode, pa.mrp, pa.price, p.category, 
-                       pa.uom as uom, similarity(p.name, %s) as sim_n, 
-                       similarity(pa.barcode, %s) as sim_b, p.is_deleted
-                FROM product_aliases pa
-                JOIN products p ON pa.product_id = p.id
-            ) as combined
-            WHERE (sim_n > 0.15 OR sim_b > 0.15 OR name ILIKE %s OR barcode ILIKE %s) 
-            AND is_deleted = FALSE
-            ORDER BY GREATEST(sim_n, sim_b) DESC, name
-            LIMIT 15
-            """,
-            (query, query, query, query, f"%{query}%", f"%{query}%"),
-        )
-        products = cur.fetchall()
-        cur.close()
-        conn.close()
-        return products
+        try:
+            cur.execute(
+                """
+                SELECT id, name, barcode, mrp, price, category, uom, load_qty FROM (
+                    SELECT p.id, p.name, p.barcode as barcode, p.mrp, p.price, p.category, 
+                           p.base_uom as uom, p.load_qty, p.aliases, similarity(p.name, %s) as sim_n, 
+                           similarity(COALESCE(p.barcode, ''), %s) as sim_b, 
+                           similarity(COALESCE(p.aliases, ''), %s) as sim_a, p.is_deleted
+                    FROM products p
+                    UNION ALL
+                    SELECT p.id, p.name, pa.barcode as barcode, pa.mrp, pa.price, p.category, 
+                           pa.uom as uom, 1.0 as load_qty, pa.aliases, similarity(p.name, %s) as sim_n, 
+                           similarity(COALESCE(pa.barcode, ''), %s) as sim_b, 
+                           similarity(COALESCE(pa.aliases, ''), %s) as sim_a, p.is_deleted
+                    FROM product_aliases pa
+                    JOIN products p ON pa.product_id = p.id
+                ) as combined
+                WHERE (sim_n > 0.1 OR sim_b > 0.1 OR sim_a > 0.1 OR name ILIKE %s OR barcode ILIKE %s OR aliases ILIKE %s) 
+                AND is_deleted = FALSE
+                ORDER BY GREATEST(sim_n, sim_b, sim_a) DESC, name
+                LIMIT 15
+                """,
+                (
+                    query,
+                    query,
+                    query,
+                    query,
+                    query,
+                    query,
+                    f"%{query}%",
+                    f"%{query}%",
+                    f"%{query}%",
+                ),
+            )
+            products = cur.fetchall()
+            return products
+        except Exception as e:
+            print(f"Search error: {e}")
+            return []
+        finally:
+            cur.close()
+            conn.close()
 
-    def get_all_products(self):
+    def search_items(self, query):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE is_deleted = FALSE ORDER BY name"
+            "SELECT id, name, category FROM products WHERE name ILIKE %s AND is_deleted = FALSE LIMIT 20",
+            (f"%{query}%",),
         )
-        products = cur.fetchall()
+        items = cur.fetchall()
         cur.close()
         conn.close()
-        return products
+        return items
+
+    def get_product_by_id(self, pid):
+        conn = self.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name, barcode, mrp, price, category, base_uom, aliases, purchase_price, load_qty FROM products WHERE id = %s",
+            (pid,),
+        )
+        product = cur.fetchone()
+        cur.close()
+        conn.close()
+        return product
 
     def find_product_by_barcode(self, barcode):
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE barcode = %s AND is_deleted = FALSE",
-            (barcode,),
+            """
+            SELECT id, name, barcode, mrp, price, category, base_uom, load_qty FROM products 
+            WHERE (barcode = %s OR aliases ILIKE %s) AND is_deleted = FALSE
+            """,
+            (barcode, f"%{barcode}%"),
         )
         product = cur.fetchone()
         if product:
@@ -1018,7 +1165,7 @@ class DatabaseManager:
                 product[6],
                 1.0,
                 False,
-                1.0,
+                product[7],  # load_qty
                 product[4],
                 product[3],
             )
@@ -1030,9 +1177,9 @@ class DatabaseManager:
             SELECT p.id, p.name, a.barcode, a.mrp, a.price, p.category, a.uom, a.factor, a.qty, p.price as base_price, p.mrp as base_mrp
             FROM product_aliases a
             JOIN products p ON a.product_id = p.id
-            WHERE a.barcode = %s AND p.is_deleted = FALSE
+            WHERE (a.barcode = %s OR a.aliases ILIKE %s) AND p.is_deleted = FALSE
             """,
-            (barcode,),
+            (barcode, f"%{barcode}%"),
         )
         alias = cur.fetchone()
         cur.close()
@@ -1048,21 +1195,20 @@ class DatabaseManager:
                 alias[6],
                 alias[7],
                 True,
-                alias[8],
+                alias[8],  # This is 'qty' from product_aliases, serving as load_qty
                 alias[9],
                 alias[10],
             )
         return None
 
     def find_product_smart(self, query):
-        """Find product smart."""
         res = self.find_product_by_barcode(query)
         if res:
             return res
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE",
+            "SELECT id, name, barcode, mrp, price, category, base_uom, load_qty FROM products WHERE name ILIKE %s AND is_deleted = FALSE",
             (query,),
         )
         p = cur.fetchone()
@@ -1077,7 +1223,7 @@ class DatabaseManager:
                 p[6],
                 1.0,
                 False,
-                1.0,
+                p[7],  # load_qty
                 p[4],
                 p[3],
             )
@@ -1085,7 +1231,7 @@ class DatabaseManager:
             conn.close()
             return res
         cur.execute(
-            "SELECT id, name, barcode, mrp, price, category, base_uom FROM products WHERE name ILIKE %s AND is_deleted = FALSE ORDER BY name LIMIT 1",
+            "SELECT id, name, barcode, mrp, price, category, base_uom, load_qty FROM products WHERE name ILIKE %s AND is_deleted = FALSE ORDER BY name LIMIT 1",
             (f"%{query}%",),
         )
         p = cur.fetchone()
@@ -1100,7 +1246,7 @@ class DatabaseManager:
                 p[6],
                 1.0,
                 False,
-                1.0,
+                p[7],  # load_qty
                 p[4],
                 p[3],
             )
@@ -1110,12 +1256,12 @@ class DatabaseManager:
         cur.execute(
             """
             SELECT id, name, barcode, mrp, price, category, base_uom,
-                   GREATEST(similarity(name, %s), similarity(barcode, %s)) as sim
+                   GREATEST(similarity(name, %s), similarity(barcode, %s)) as sim, load_qty
             FROM products
-            WHERE (similarity(name, %s) > 0.3 OR similarity(barcode, %s) > 0.3) AND is_deleted = FALSE
+            WHERE (similarity(name, %s) > 0.3 OR similarity(barcode, %s) > 0.3 OR aliases ILIKE %s) AND is_deleted = FALSE
             ORDER BY sim DESC LIMIT 1
             """,
-            (query, query, query, query),
+            (query, query, query, query, f"%{query}%"),
         )
         p_fuzzy = cur.fetchone()
         cur.execute(
@@ -1124,10 +1270,10 @@ class DatabaseManager:
                    similarity(a.barcode, %s) as sim
             FROM product_aliases a
             JOIN products p ON a.product_id = p.id
-            WHERE similarity(a.barcode, %s) > 0.3 AND p.is_deleted = FALSE
+            WHERE (similarity(a.barcode, %s) > 0.3 OR a.aliases ILIKE %s) AND p.is_deleted = FALSE
             ORDER BY sim DESC LIMIT 1
             """,
-            (query, query),
+            (query, query, f"%{query}%"),
         )
         a_fuzzy = cur.fetchone()
         cur.close()
@@ -1144,7 +1290,7 @@ class DatabaseManager:
                     p_fuzzy[6],
                     1.0,
                     False,
-                    1.0,
+                    p_fuzzy[8],  # load_qty
                     p_fuzzy[4],
                     p_fuzzy[3],
                 )
@@ -1158,7 +1304,7 @@ class DatabaseManager:
                 a_fuzzy[6],
                 a_fuzzy[7],
                 True,
-                a_fuzzy[8],
+                a_fuzzy[8],  # qty from aliases
                 a_fuzzy[9],
                 a_fuzzy[10],
             )
@@ -1173,7 +1319,7 @@ class DatabaseManager:
                 p_fuzzy[6],
                 1.0,
                 False,
-                1.0,
+                p_fuzzy[8],  # load_qty
                 p_fuzzy[4],
                 p_fuzzy[3],
             )
@@ -1188,14 +1334,55 @@ class DatabaseManager:
                 a_fuzzy[6],
                 a_fuzzy[7],
                 True,
-                a_fuzzy[8],
+                a_fuzzy[8],  # qty from aliases
                 a_fuzzy[9],
                 a_fuzzy[10],
             )
         return None
 
+    def get_product_units(self, product_id):
+        conn = self.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT base_uom as uom, price, mrp, 1.0 as factor FROM products WHERE id = %s",
+                (product_id,),
+            )
+            base = cur.fetchone()
+
+            cur.execute(
+                "SELECT uom, price, mrp, factor FROM product_aliases WHERE product_id = %s",
+                (product_id,),
+            )
+            aliases = cur.fetchall()
+
+            res = []
+            if base:
+                res.append(
+                    {
+                        "uom": base[0],
+                        "price": float(base[1]),
+                        "mrp": float(base[2]),
+                        "factor": 1.0,
+                    }
+                )
+
+            for a in aliases:
+                res.append(
+                    {
+                        "uom": a[0],
+                        "price": float(a[1]),
+                        "mrp": float(a[2]),
+                        "factor": float(a[3]),
+                    }
+                )
+
+            return res
+        finally:
+            cur.close()
+            conn.close()
+
     def get_product_uom_data(self, product_id, uom):
-        """Get product uom data."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -1233,7 +1420,6 @@ class DatabaseManager:
         return None
 
     def get_available_mrps(self, product_id, uom):
-        """Get available mrps."""
         conn = self.get_connection()
         cur = conn.cursor()
         res = []
@@ -1262,7 +1448,6 @@ class DatabaseManager:
         return unique_res
 
     def add_scheme(self, name, valid_from, valid_to, items_data):
-        """Add scheme."""
         conn = self.get_connection()
         try:
             cur = conn.cursor()
@@ -1298,7 +1483,6 @@ class DatabaseManager:
             conn.close()
 
     def update_scheme(self, scheme_id, name, valid_from, valid_to, items_data):
-        """Update scheme."""
         conn = self.get_connection()
         try:
             cur = conn.cursor()
@@ -1336,7 +1520,6 @@ class DatabaseManager:
             conn.close()
 
     def get_scheme_rules(self, scheme_id):
-        """Get scheme rules."""
         try:
             with self.get_connection() as conn:
                 cur = conn.cursor()
@@ -1354,7 +1537,6 @@ class DatabaseManager:
             return []
 
     def get_schemes(self):
-        """Get schemes."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("""
@@ -1374,7 +1556,6 @@ class DatabaseManager:
         return schemes
 
     def get_active_scheme_for_product(self, product_id, qty, uom=None, mrp=None):
-        """Get active scheme for product."""
         try:
             with self.get_connection() as conn:
                 cur = conn.cursor()
@@ -1411,7 +1592,6 @@ class DatabaseManager:
             return None
 
     def delete_scheme(self, scheme_id):
-        """Delete scheme."""
         conn = self.get_connection()
         cur = conn.cursor()
         try:
@@ -1425,7 +1605,6 @@ class DatabaseManager:
             conn.close()
 
     def get_sales_history(self, date=None, query=None):
-        """Get sales history."""
         conn = self.get_connection()
         cur = conn.cursor()
         sql_query = """

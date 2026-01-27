@@ -49,7 +49,7 @@ class LicenseDialog(QDialog):
                 border: none;
             }}
         """)
-        
+
         license_text = """<pre>
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
@@ -674,7 +674,7 @@ copy of the Program in return for a fee.
                      END OF TERMS AND CONDITIONS
         </pre>
         """
-        
+
         self.content_browser.setHtml(license_text)
         layout.addWidget(self.content_browser)
 
@@ -788,7 +788,7 @@ class HelpDialog(QDialog):
                     <p>There are multiple ways to add items to the bill:</p>
                     <ol>
                         <li><b>Scan Barcode:</b> If you have a scanner, simply scan the product.</li>
-                        <li><b>Search (F3):</b> Press <b>F3</b> to open the Product Search dialog.</li>
+                        <li><b>Search (F10):</b> Press <b>F10</b> to open the Product Search dialog.</li>
                         <li><b>Manual Entry:</b> Type the barcode or name directly into the grid's first column.</li>
                     </ol>
 
@@ -806,12 +806,13 @@ class HelpDialog(QDialog):
                             <th>Action</th>
                         </tr>
                         <tr><td><b>F2</b></td><td>Save & Print Bill (Checkout)</td></tr>
-                        <tr><td><b>F3</b></td><td>Search Product</td></tr>
+                        <tr><td><b>F3</b></td><td>Select Customer</td></tr>
                         <tr><td><b>F4</b></td><td>Clear / Reset Grid</td></tr>
                         <tr><td><b>F5</b></td><td>View Sales History / Day Book</td></tr>
                         <tr><td><b>F6</b></td><td>Hold Current Bill (Save as Draft)</td></tr>
                         <tr><td><b>F7</b></td><td>Recall Held Bill</td></tr>
                         <tr><td><b>F8</b> / Ctrl+Alt+C</td><td>Open Calculator</td></tr>
+                        <tr><td><b>F10</b></td><td>Search Product</td></tr>
                         <tr><td><b>Esc</b></td><td>Close Window / Quit</td></tr>
                         <tr><td><b>Insert</b></td><td>Insert New Row</td></tr>
                         <tr><td><b>Delete</b></td><td>Delete Selected Row</td></tr>

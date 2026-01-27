@@ -1,6 +1,6 @@
 # 🔐 User Roles & Permissions
 
-elytPOS employs a flexible **Role-Based Access Control (RBAC)** system. While users are assigned a primary role (Admin, Manager, Staff), **individual permissions can be customized** for each user, providing complete control over system access.
+elytPOS employs a flexible **Role-Based Access Control (RBAC)** system. While users are assigned a primary role (Admin, Manager, Cashier), **individual permissions can be customized** for each user, providing complete control over system access.
 
 ---
 
@@ -35,7 +35,7 @@ When creating a user, selecting a role automatically applies a standard set of p
 *   **Excluded:** User Management, System Settings, Database Ops.
 *   **Focus:** Business operations and inventory management.
 
-### 🧑‍💼 Staff
+### 🧑‍💼 Cashier
 *   **Default:** Billing, Reports.
 *   **Excluded:** All Master data management and Admin functions.
 *   **Focus:** Fast and secure checkout operations.

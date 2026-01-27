@@ -3,6 +3,7 @@ import os
 import random
 import configparser
 import psycopg2
+import crypto_utils
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from datetime import datetime, timedelta
 from database import DatabaseManager
@@ -12,7 +13,17 @@ from main import ConfigDialog, CompanySelectionDialog
 
 def create_db_if_missing(config_path):
     config = configparser.ConfigParser()
-    config.read(config_path)
+    enc_path = config_path + ".enc"
+
+    if os.path.exists(enc_path):
+        try:
+            content = crypto_utils.decrypt_content(enc_path)
+            config.read_string(content)
+        except Exception as e:
+            print(f"Error reading encrypted config: {e}")
+            return
+    else:
+        config.read(config_path)
 
     if "postgresql" not in config:
         return
@@ -58,13 +69,20 @@ def main():
     else:
         application_path = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(application_path, "db.config")
+    enc_path = config_path + ".enc"
 
-    # Ensure config exists
-    if not os.path.exists(config_path):
+    # Ensure config exists (check both plain and enc)
+    if not os.path.exists(config_path) and not os.path.exists(enc_path):
         print("db.config not found. Opening Setup...")
         if ConfigDialog(config_path).exec() != QDialog.Accepted:
             print("Setup cancelled.")
             sys.exit(0)
+        # Encrypt the newly created config
+        crypto_utils.encrypt_file(config_path)
+
+    # If only config exists (no enc), encrypt it (auto-migration)
+    if os.path.exists(config_path) and not os.path.exists(enc_path):
+        crypto_utils.encrypt_file(config_path)
 
     # Load connection parameters
     config_params = DatabaseManager.load_config()
@@ -80,8 +98,8 @@ def main():
     db = DatabaseManager(dbname=selected_db)
     print(f"Seeding demo data into '{selected_db}'...")
 
-    db.add_user("admin", "admin123", "Super Administrator", "admin")
-    db.add_user("cashier1", "cash123", "John Cashier", "staff")
+    db.add_user("admin", "admin123", "System Administrator", "admin")
+    db.add_user("cashier1", "cash123", "John Cashier", "cashier")
     print("Users seeded.")
 
     db.add_language("Hindi", "hi")
@@ -105,18 +123,98 @@ def main():
     print("Customers seeded.")
 
     products_data = [
-        ("Amul Butter 100g", "8901234001", 60.0, 55.0, "Dairy", "pcs"),
-        ("Tata Salt 1kg", "8901234002", 28.0, 25.0, "Grocery", "pcs"),
-        ("Maggi Noodles 70g", "8901234003", 14.0, 12.0, "Snacks", "pcs"),
-        ("Coca Cola 500ml", "8901234004", 40.0, 35.0, "Beverages", "pcs"),
-        ("Basmati Rice", "8901234005", 120.0, 110.0, "Grocery", "kg"),
-        ("Washing Powder 1kg", "8901234006", 150.0, 140.0, "Household", "pcs"),
-        ("Sunlight Soap", "8901234007", 30.0, 28.0, "Household", "pcs"),
-        ("Pepsodent 150g", "8901234008", 95.0, 90.0, "Personal Care", "pcs"),
+        (
+            "Amul Butter 100g",
+            "8901234001",
+            60.0,
+            55.0,
+            "Dairy",
+            "pcs",
+            "AMUL100,BUTTER100",
+            50.0,
+            100,
+        ),
+        (
+            "Tata Salt 1kg",
+            "8901234002",
+            28.0,
+            25.0,
+            "Grocery",
+            "pcs",
+            "SALT1KG",
+            22.0,
+            500,
+        ),
+        (
+            "Maggi Noodles 70g",
+            "8901234003",
+            14.0,
+            12.0,
+            "Snacks",
+            "pcs",
+            "MAGGI70",
+            10.5,
+            2000,
+        ),
+        (
+            "Coca Cola 500ml",
+            "8901234004",
+            40.0,
+            35.0,
+            "Beverages",
+            "pcs",
+            "COKE500",
+            30.0,
+            150,
+        ),
+        (
+            "Basmati Rice",
+            "8901234005",
+            120.0,
+            110.0,
+            "Grocery",
+            "kg",
+            "RICE,BASMATI",
+            95.0,
+            1000,
+        ),
+        (
+            "Washing Powder 1kg",
+            "8901234006",
+            150.0,
+            140.0,
+            "Household",
+            "pcs",
+            "WASH1KG",
+            125.0,
+            80,
+        ),
+        (
+            "Sunlight Soap",
+            "8901234007",
+            30.0,
+            28.0,
+            "Household",
+            "pcs",
+            "SUNLIGHT",
+            24.0,
+            300,
+        ),
+        (
+            "Pepsodent 150g",
+            "8901234008",
+            95.0,
+            90.0,
+            "Personal Care",
+            "pcs",
+            "PEPSO150",
+            80.0,
+            120,
+        ),
     ]
     p_ids = []
-    for name, barcode, mrp, price, cat, uom in products_data:
-        pid = db.add_product(name, barcode, mrp, price, cat, uom)
+    for name, barcode, mrp, price, cat, uom, aliases, pur, stock in products_data:
+        pid = db.add_product(name, barcode, mrp, price, cat, uom, aliases, pur, stock)
         if not pid:
             res = db.find_product_by_barcode(barcode)
             if res:
@@ -127,13 +225,16 @@ def main():
     print("Products seeded.")
 
     if p5:
-        db.add_alias(p5, "8901234005-5", "kg", 580.0, 540.0, 5.0, 5.0)
+        # kg to 5kg variant
+        db.add_alias(
+            p5, "8901234005-5", "kg", 580.0, 540.0, 5.0, 5.0, "RICE5KG", 450.0, 50
+        )
 
     # Add multiple MRP aliases for Maggi
     if p3:
         # Original is 14 MRP
-        db.add_alias(p3, "MAGGI15", "pcs", 15.0, 13.0, 1.0, 1.0)
-        db.add_alias(p3, "MAGGI16", "pcs", 16.0, 14.0, 1.0, 1.0)
+        db.add_alias(p3, "MAGGI15", "pcs", 15.0, 13.0, 1.0, 1.0, "M15", 11.0, 100)
+        db.add_alias(p3, "MAGGI16", "pcs", 16.0, 14.0, 1.0, 1.0, "M16", 11.5, 100)
 
     print("Aliases seeded.")
 

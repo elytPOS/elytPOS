@@ -155,6 +155,8 @@ cython_debug/
 
 # Configuration
 db.config
+db.config.enc
+secret.key
 backups/
 
 # Build artifacts
